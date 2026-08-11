@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { deleteParticipant, readAllResults, resultStorageMode, reviewParticipant } from "@/lib/result-store";
+import { chatCounts, interruptionMetrics, taskMilestones } from "@/lib/admin-result-metrics";
 import { ADMIN_COOKIE, getResearcherAuthConfig } from "@/lib/results-server";
 import { verifySignedToken } from "@/lib/signed-token";
 
@@ -69,6 +70,9 @@ export async function GET(request: NextRequest) {
     const results = database.results
       .map((result) => {
         const sessionEvents = (eventsBySession.get(result.session_id) || []).toSorted((left, right) => left.sequence_number - right.sequence_number);
+        const interruption = interruptionMetrics(sessionEvents);
+        const conversation = chatCounts(Array.isArray(result.chat) ? result.chat as Array<{ role: "user" | "assistant"; text: string }> : null);
+        const milestones = taskMilestones(sessionEvents, result.status);
         const materialCompletionIds = new Set(sessionEvents.filter((event) => event.event_type === "material_exposure_completed").map((event) => event.target_id).filter(Boolean));
         const recoveryTabs = [...new Set(sessionEvents.filter((event) => event.event_type === "recovery_tab_viewed").map((event) => event.target_id).filter((value): value is string => Boolean(value)))];
         return {
@@ -88,8 +92,19 @@ export async function GET(request: NextRequest) {
         reviewed_at: result.reviewed_at || null,
         pre_survey: result.pre_survey,
         memo_length: result.memo?.trim().length || 0,
+        chat_turn_count: conversation.total,
+        user_chat_turn_count: conversation.user,
+        assistant_chat_turn_count: conversation.assistant,
         has_recall: Boolean(result.recall && Object.values(result.recall).some((value) => value.trim())),
+        recall_answer_count: result.recall ? Object.values(result.recall).filter((value) => value.trim()).length : 0,
         has_problem_state: Boolean(result.problem_state),
+        task_steps_complete: milestones.filter((milestone) => milestone.complete).length,
+        task_steps_total: milestones.length,
+        interruption_completed: interruption.completed,
+        letter_accuracy: interruption.letter.accuracy,
+        letter_attempts: interruption.letter.attempts,
+        color_accuracy: interruption.color.accuracy,
+        color_attempts: interruption.color.attempts,
         event_count: sessionEvents.length,
         event_sequence_complete: sessionEvents.length > 0 && sessionEvents.every((event, index) => event.sequence_number === index + 1),
         initial_material_presented: sessionEvents.some((event) => event.event_type === "material_presented" && event.target_id === "b1"),
