@@ -1,5 +1,6 @@
 export interface StudyEvent {
   id: string;
+  sessionId: string;
   type: string;
   stage: string;
   targetType?: string;
@@ -21,6 +22,7 @@ export interface ProblemStateAction {
 
 const STORAGE_KEY = "rmw-demo-events";
 const PARTICIPANT_KEY = "rmw-participant-id";
+const SESSION_KEY = "rmw-study-session-id";
 
 export function getOrCreateParticipantId() {
   if (typeof window === "undefined") return "";
@@ -31,10 +33,25 @@ export function getOrCreateParticipantId() {
   return generated;
 }
 
+export function beginStudySession() {
+  if (typeof window === "undefined") return "";
+  const sessionId = crypto.randomUUID();
+  sessionStorage.setItem(SESSION_KEY, sessionId);
+  return sessionId;
+}
+
+export function getActiveSessionId() {
+  return typeof window === "undefined" ? "" : sessionStorage.getItem(SESSION_KEY) || "";
+}
+
+function eventStorageKey(sessionId = getActiveSessionId()) {
+  return sessionId ? `${STORAGE_KEY}:${sessionId}` : STORAGE_KEY;
+}
+
 export function readStudyEvents(): StudyEvent[] {
   if (typeof window === "undefined") return [];
   try {
-    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+    const parsed = JSON.parse(localStorage.getItem(eventStorageKey()) || "[]");
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
@@ -42,7 +59,9 @@ export function readStudyEvents(): StudyEvent[] {
 }
 
 const PROBLEM_STATE_ACTIONS = new Set([
+  "material_presented",
   "material_opened",
+  "material_exposure_completed",
   "phase_criterion_toggled",
   "memo_edited",
   "chat_message_sent",
@@ -53,11 +72,12 @@ const PROBLEM_STATE_ACTIONS = new Set([
 
 export function readProblemStateActions(): ProblemStateAction[] {
   const anonymousCode = getOrCreateParticipantId();
+  const sessionId = getActiveSessionId();
+  if (!sessionId) return [];
   const allEvents = readStudyEvents();
-  const studyStart = allEvents.findLastIndex((event) =>
-    event.type === "research_task_started" && event.payload.anonymousCode === anonymousCode);
-  const relevant = allEvents.slice(studyStart + 1).filter((event) =>
-    event.payload.anonymousCode === anonymousCode
+  const relevant = allEvents.filter((event) =>
+    event.sessionId === sessionId
+    && event.payload.anonymousCode === anonymousCode
     && event.stage === "research_work"
     && PROBLEM_STATE_ACTIONS.has(event.type));
   const lastMemoEdit = relevant.findLastIndex((event) => event.type === "memo_edited");
@@ -86,19 +106,22 @@ export function eventLog(
   context: { stage?: string; targetType?: string; targetId?: string } = {},
 ) {
   if (typeof window === "undefined") return;
+  const sessionId = getActiveSessionId();
+  if (!sessionId) return;
   const current = readStudyEvents();
   const anonymousCode = getOrCreateParticipantId();
   const item: StudyEvent = {
     id: crypto.randomUUID(),
+    sessionId,
     type,
     stage: context.stage || "unknown",
     targetType: context.targetType,
     targetId: context.targetId,
-    sequenceNumber: current.length + 1,
+    sequenceNumber: (current.at(-1)?.sequenceNumber || 0) + 1,
     payload: { anonymousCode, ...payload },
     at: new Date().toISOString(),
   };
-  localStorage.setItem(STORAGE_KEY, JSON.stringify([...current, item].slice(-1000)));
+  localStorage.setItem(eventStorageKey(sessionId), JSON.stringify([...current, item].slice(-1000)));
   syncRemoteEvent(item as unknown as Record<string, unknown>);
 }
 import { syncRemoteEvent } from "./remote-results";

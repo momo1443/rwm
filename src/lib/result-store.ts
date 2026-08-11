@@ -2,6 +2,7 @@ import path from "node:path";
 import { getResultStorageConfig } from "./results-server";
 
 export type ParticipantResultRow = {
+  session_id: string;
   participant_code: string;
   locale: string;
   condition: string;
@@ -15,12 +16,19 @@ export type ParticipantResultRow = {
   problem_state: unknown;
   recall: Record<string, string> | null;
   recovery_state: unknown;
+  analysis_status: AnalysisStatus;
+  exclusion_reason: string | null;
+  review_note: string | null;
+  reviewed_at: string | null;
   created_at: string;
   updated_at: string;
 };
 
+export type AnalysisStatus = "included" | "excluded" | "trashed";
+
 export type ResultEventRow = {
   id: string;
+  session_id: string;
   participant_code: string;
   sequence_number: number;
   event_type: string;
@@ -33,8 +41,13 @@ export type ResultEventRow = {
 };
 
 export type ResultDatabase = { results: ParticipantResultRow[]; events: ResultEventRow[] };
-export type ResultEventInput = Omit<ResultEventRow, "participant_code" | "server_timestamp">;
+export type ResultEventInput = Omit<ResultEventRow, "session_id" | "participant_code" | "server_timestamp">;
 export type ResultUpdate = Partial<Pick<ParticipantResultRow, "pre_survey" | "memo" | "chat" | "problem_state" | "recall" | "recovery_state">>;
+export type ReviewUpdate = {
+  analysisStatus: AnalysisStatus;
+  exclusionReason: string | null;
+  reviewNote: string | null;
+};
 
 const EMPTY_DATABASE: ResultDatabase = { results: [], events: [] };
 let localWriteQueue = Promise.resolve();
@@ -47,14 +60,23 @@ function localDatabasePath(directory: string) {
   return path.join(path.resolve(process.cwd(), directory), "results.json");
 }
 
+function legacySessionId(participantCode: string) {
+  const suffix = participantCode.replace(/^RMW-/, "").toLowerCase().padEnd(12, "0");
+  return `00000000-0000-4000-8000-${suffix}`;
+}
+
 async function readLocalDatabase(directory: string): Promise<ResultDatabase> {
   const { readFile } = await fileApi();
   try {
     const parsed = JSON.parse(await readFile(localDatabasePath(directory), "utf8")) as Partial<ResultDatabase>;
-    return {
-      results: Array.isArray(parsed.results) ? parsed.results : [],
-      events: Array.isArray(parsed.events) ? parsed.events : [],
-    };
+    const results = Array.isArray(parsed.results)
+      ? parsed.results.map((result) => ({ ...result, session_id: result.session_id || legacySessionId(result.participant_code) }))
+      : [];
+    const sessionByParticipant = new Map(results.map((result) => [result.participant_code, result.session_id]));
+    const events = Array.isArray(parsed.events)
+      ? parsed.events.map((event) => ({ ...event, session_id: event.session_id || sessionByParticipant.get(event.participant_code) || legacySessionId(event.participant_code) }))
+      : [];
+    return { results, events };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return structuredClone(EMPTY_DATABASE);
     throw error;
@@ -98,21 +120,22 @@ export function resultStorageMode() {
   return getResultStorageConfig()?.mode || null;
 }
 
-export async function findParticipant(participantCode: string) {
+export async function findSession(sessionId: string) {
   const config = getResultStorageConfig();
   if (!config) return null;
   if (config.mode === "local") {
-    return (await readLocalDatabase(config.directory)).results.find((result) => result.participant_code === participantCode) || null;
+    return (await readLocalDatabase(config.directory)).results.find((result) => result.session_id === sessionId) || null;
   }
-  const rows = await supabaseRequest<ParticipantResultRow[]>(`participant_results?participant_code=eq.${encodeURIComponent(participantCode)}&limit=1`);
+  const rows = await supabaseRequest<ParticipantResultRow[]>(`participant_results?session_id=eq.${encodeURIComponent(sessionId)}&limit=1`);
   return rows[0] || null;
 }
 
-export async function createParticipant(input: { participantCode: string; locale: string; condition: string; taskId: string }) {
+export async function createParticipant(input: { sessionId: string; participantCode: string; locale: string; condition: string; taskId: string }) {
   const config = getResultStorageConfig();
   if (!config) throw new Error("Result storage is not configured");
   const now = new Date().toISOString();
   const row: ParticipantResultRow = {
+    session_id: input.sessionId,
     participant_code: input.participantCode,
     locale: input.locale,
     condition: input.condition,
@@ -126,26 +149,35 @@ export async function createParticipant(input: { participantCode: string; locale
     problem_state: null,
     recall: null,
     recovery_state: null,
+    analysis_status: "included",
+    exclusion_reason: null,
+    review_note: null,
+    reviewed_at: null,
     created_at: now,
     updated_at: now,
   };
   if (config.mode === "local") {
     await updateLocalDatabase(config.directory, (database) => {
-      if (database.results.some((result) => result.participant_code === input.participantCode)) return;
+      if (database.results.some((result) => result.session_id === input.sessionId)) return;
       database.results.push(row);
     });
     return;
   }
-  await supabaseRequest("participant_results", { method: "POST", headers: { prefer: "return=minimal" }, body: JSON.stringify(row) });
+  const supabaseRow: Partial<ParticipantResultRow> = { ...row };
+  delete supabaseRow.analysis_status;
+  delete supabaseRow.exclusion_reason;
+  delete supabaseRow.review_note;
+  delete supabaseRow.reviewed_at;
+  await supabaseRequest("participant_results", { method: "POST", headers: { prefer: "return=minimal" }, body: JSON.stringify(supabaseRow) });
 }
 
-export async function saveResultEvent(participantCode: string, event: ResultEventInput) {
+export async function saveResultEvent(sessionId: string, participantCode: string, event: ResultEventInput) {
   const config = getResultStorageConfig();
   if (!config) throw new Error("Result storage is not configured");
-  const row: ResultEventRow = { ...event, participant_code: participantCode, server_timestamp: new Date().toISOString() };
+  const row: ResultEventRow = { ...event, session_id: sessionId, participant_code: participantCode, server_timestamp: new Date().toISOString() };
   if (config.mode === "local") {
     await updateLocalDatabase(config.directory, (database) => {
-      if (database.events.some((saved) => saved.id === row.id || (saved.participant_code === participantCode && saved.sequence_number === row.sequence_number))) return;
+      if (database.events.some((saved) => saved.id === row.id || (saved.session_id === sessionId && saved.sequence_number === row.sequence_number))) return;
       database.events.push(row);
     });
     return;
@@ -157,7 +189,7 @@ export async function saveResultEvent(participantCode: string, event: ResultEven
   });
 }
 
-export async function updateParticipant(participantCode: string, update: ResultUpdate, completed: boolean) {
+export async function updateParticipant(sessionId: string, update: ResultUpdate, completed: boolean) {
   const config = getResultStorageConfig();
   if (!config) throw new Error("Result storage is not configured");
   const now = new Date().toISOString();
@@ -165,13 +197,13 @@ export async function updateParticipant(participantCode: string, update: ResultU
   if (completed) Object.assign(patch, { status: "completed", completed_at: now });
   if (config.mode === "local") {
     await updateLocalDatabase(config.directory, (database) => {
-      const result = database.results.find((candidate) => candidate.participant_code === participantCode);
+      const result = database.results.find((candidate) => candidate.session_id === sessionId);
       if (!result) throw new Error("Participant not found");
       Object.assign(result, patch);
     });
     return;
   }
-  await supabaseRequest(`participant_results?participant_code=eq.${encodeURIComponent(participantCode)}`, {
+  await supabaseRequest(`participant_results?session_id=eq.${encodeURIComponent(sessionId)}`, {
     method: "PATCH",
     headers: { prefer: "return=minimal" },
     body: JSON.stringify(patch),
@@ -187,4 +219,46 @@ export async function readAllResults(): Promise<ResultDatabase> {
     supabaseRequest<ResultEventRow[]>("participant_result_events?select=*&order=server_timestamp.asc"),
   ]);
   return { results, events };
+}
+
+export async function reviewParticipant(sessionId: string, update: ReviewUpdate) {
+  const config = getResultStorageConfig();
+  if (!config) throw new Error("Result storage is not configured");
+  const patch = {
+    analysis_status: update.analysisStatus,
+    exclusion_reason: update.analysisStatus === "included" ? null : update.exclusionReason,
+    review_note: update.reviewNote,
+    reviewed_at: new Date().toISOString(),
+  };
+  if (config.mode === "local") {
+    await updateLocalDatabase(config.directory, (database) => {
+      const result = database.results.find((candidate) => candidate.session_id === sessionId);
+      if (!result) throw new Error("Participant not found");
+      Object.assign(result, patch);
+    });
+    return;
+  }
+  await supabaseRequest(`participant_results?session_id=eq.${encodeURIComponent(sessionId)}`, {
+    method: "PATCH",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify(patch),
+  });
+}
+
+export async function deleteParticipant(sessionId: string) {
+  const config = getResultStorageConfig();
+  if (!config) throw new Error("Result storage is not configured");
+  if (config.mode === "local") {
+    await updateLocalDatabase(config.directory, (database) => {
+      const index = database.results.findIndex((candidate) => candidate.session_id === sessionId);
+      if (index < 0) throw new Error("Participant not found");
+      database.results.splice(index, 1);
+      database.events = database.events.filter((event) => event.session_id !== sessionId);
+    });
+    return;
+  }
+  await supabaseRequest(`participant_results?session_id=eq.${encodeURIComponent(sessionId)}`, {
+    method: "DELETE",
+    headers: { prefer: "return=minimal" },
+  });
 }

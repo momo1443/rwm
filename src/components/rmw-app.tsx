@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { eventLog, getOrCreateParticipantId } from "@/lib/event-log";
+import { beginStudySession, eventLog, getOrCreateParticipantId } from "@/lib/event-log";
 import {
   completeRemoteStudy,
   saveRemoteStudySnapshot,
@@ -96,6 +96,7 @@ export function RmwApp() {
   const [chat, setChat] = useState<ChatMessage[]>(() => [{ role: "assistant", text: getResearchTask("waste").assistantIntro["zh-CN"] }]);
   const [testMode, setTestMode] = useState(true);
   const [participantId, setParticipantId] = useState("");
+  const [startError, setStartError] = useState("");
   const [problemState, setProblemState] = useState<ProblemStateSnapshot | null>(() => readProblemStateSnapshot());
   const completionSubmittedRef = useRef(false);
   const t = copy[locale];
@@ -132,9 +133,15 @@ export function RmwApp() {
         <div className="max-w-md"><SquaresFour size={42} className="mx-auto mb-5 text-primary" /><h1 className="text-2xl font-semibold">{t.desktop}</h1><p className="mt-3 text-muted-foreground">{t.desktopText}</p></div>
       </div>
       <main className="desktop-app min-h-screen">
-        {screen === "landing" && <Landing locale={locale} setLocale={setLocale} participantId={participantId} condition={condition} setCondition={setCondition} onStart={async () => {
+        {screen === "landing" && <Landing locale={locale} setLocale={setLocale} participantId={participantId} condition={condition} setCondition={setCondition} startError={startError} onStart={async () => {
           const task = getResearchTask("waste");
-          void startRemoteStudySession({ participantCode: participantId, locale, condition, taskId: "waste" });
+          setStartError("");
+          const sessionId = beginStudySession();
+          const started = await startRemoteStudySession({ sessionId, participantCode: participantId, locale, condition, taskId: "waste" });
+          if (!started) {
+            setStartError(locale === "zh-CN" ? "无法创建本次运行，请检查网络后重试。" : "Could not create this study run. Check your connection and try again.");
+            return;
+          }
           eventLog("consent_submitted", { locale, access: "anonymous", participantId, condition }, { stage: "consent" });
           completionSubmittedRef.current = false;
           setMemo(task.starterMemo[locale]);
@@ -169,6 +176,7 @@ function Landing({
   participantId,
   condition,
   setCondition,
+  startError,
   onStart,
   t,
 }: {
@@ -177,6 +185,7 @@ function Landing({
   participantId: string;
   condition: Condition;
   setCondition: (condition: Condition) => void;
+  startError: string;
   onStart: () => Promise<void>;
   t: typeof copy[Locale];
 }) {
@@ -206,6 +215,7 @@ function Landing({
         </fieldset>
         <label className="mt-7 flex cursor-pointer items-start gap-3 text-sm leading-6"><input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)} className="mt-1 size-4 accent-[var(--primary)]"/><span>{t.consent}</span></label>
         <TimedButton seconds={5} ready={consent&&Boolean(participantId)} locale={locale} label={t.enter} blockedLabel={locale==="zh-CN"?"请勾选同意":"Provide consent to continue"} onClick={onStart} className="mt-7 h-12 w-full" />
+        {startError && <p role="alert" className="mt-3 text-center text-xs text-destructive">{startError}</p>}
         <p className="mt-3 text-center text-[11px] text-muted-foreground">{locale==="zh-CN"?"按钮将在阅读时间结束且信息完整后开放。":"The button unlocks after the reading time and required fields are complete."}</p>
       </div>
     </section>
@@ -740,7 +750,7 @@ function Workspace({
   return <div className="h-screen min-h-[720px] overflow-hidden bg-[#f8f7f3]">
     <header className="flex h-[68px] items-center justify-between border-b bg-white/90 px-5"><div className="flex items-center gap-4"><Brand/><Badge variant="secondary" className="rounded-full">{phase==="work"?(locale==="zh-CN"?"第一阶段 · 形成问题框架":"Phase 1 · Frame the problem"):t.day}</Badge><Badge variant="outline" className="rounded-full">{task.label[locale]}</Badge></div><div className="flex items-center gap-5 text-sm"><span className={`flex items-center gap-2 font-mono ${remainingSeconds<=60?"text-destructive":"text-primary"}`} aria-label={locale==="zh-CN"?`剩余时间 ${timerText}`:`Time remaining ${timerText}`}><Timer size={18}/>{timerText}</span><span className="flex items-center gap-2 text-[var(--active)]"><CheckCircle size={18}/>{t.saved}</span><span className="flex items-center gap-2 text-muted-foreground"><Globe size={18}/>{locale==="zh-CN"?"中文":"English"}</span><button onClick={()=>setShowTour(true)} aria-label={t.help} title={t.readFirst} className="grid size-10 place-items-center rounded-lg hover:bg-muted"><Question size={20}/></button></div></header>
     <div ref={workspaceGridRef} className="workspace-grid grid h-[calc(100vh-68px)] min-h-0 overflow-hidden" style={{gridTemplateColumns:`${leftColumnRatio}fr 10px ${centerColumnRatio}fr 10px ${rightColumnRatio}fr`}}>
-      <MaterialsPanel locale={locale} taskId={taskId} t={t}/>
+      <MaterialsPanel locale={locale} taskId={taskId} phase={phase} t={t}/>
       <button
         type="button"
         aria-label={locale==="zh-CN"?"左右拖动，调整材料与工作区宽度":"Drag horizontally to resize materials and workspace"}
@@ -802,15 +812,31 @@ function Workspace({
   </div>
 }
 
-function MaterialsPanel({locale,taskId,t}:{locale:Locale;taskId:ResearchTaskId;t:typeof copy[Locale]}) {
+function MaterialsPanel({locale,taskId,phase,t}:{locale:Locale;taskId:ResearchTaskId;phase:"work"|"recovery";t:typeof copy[Locale]}) {
   const task=getResearchTask(taskId);
   const materials=task.materials;
   const [active,setActive]=useState(materials[0].id);
-  const [read,setRead]=useState<Set<string>>(()=>new Set([materials[0].id]));
+  const [read,setRead]=useState<Set<string>>(()=>new Set());
+  const presentedRef=useRef(new Set<string>());
+  const completedRef=useRef(new Set<string>());
+  const stage=phase==="work"?"research_work":"recovery";
+  useEffect(()=>{
+    if(!presentedRef.current.has(active)){
+      presentedRef.current.add(active);
+      eventLog("material_presented",{taskId,phase,initial:active===materials[0].id},{stage,targetType:"material",targetId:active});
+    }
+    const startedAt=Date.now();
+    const timer=window.setTimeout(()=>{
+      if(completedRef.current.has(active))return;
+      completedRef.current.add(active);
+      setRead(current=>new Set([...current,active]));
+      eventLog("material_exposure_completed",{taskId,phase,durationMs:Date.now()-startedAt,completionRule:"active_for_5_seconds"},{stage,targetType:"material",targetId:active});
+    },5_000);
+    return()=>window.clearTimeout(timer);
+  },[active,materials,phase,stage,taskId]);
   const openMaterial=(id:string)=>{
     setActive(id);
-    setRead(current=>new Set([...current,id]));
-    eventLog("material_opened",{id,taskId},{stage:"research_work",targetType:"material",targetId:id});
+    eventLog("material_opened",{id,taskId,phase},{stage,targetType:"material",targetId:id});
   };
   return <aside data-tour="materials" className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-[#fbfaf7]">
     <div className="flex h-14 shrink-0 items-center justify-between border-b px-5"><h2 className="flex items-center gap-2 font-semibold"><BookOpenText size={20}/>{t.materials}</h2><Badge variant="outline" className="text-[10px]">5 passages</Badge></div>
@@ -874,6 +900,25 @@ function PhaseOnePanel({locale,condition,taskId,memo,remaining,testMode,setScree
 }
 
 function RecoveryPanel({locale,condition,cards,relations,selected,setSelected,updateStatus,togglePin,updateContent,setScreen,t}:{locale:Locale;condition:Condition;cards:ReasoningCard[];relations:CardRelation[];selected:string;setSelected:(s:string)=>void;updateStatus:(id:string,s:EpistemicStatus)=>void;togglePin:(id:string)=>void;updateContent:(id:string,value:string)=>void;setScreen:(s:Screen)=>void;t:typeof copy[Locale]}) {
+  const [activeTab,setActiveTab]=useState<"brief"|"cards"|"network">("brief");
+  const renderedRef=useRef(false);
+  const viewedTabsRef=useRef(new Set<string>());
+  useEffect(()=>{
+    if(renderedRef.current)return;
+    renderedRef.current=true;
+    eventLog("recovery_support_rendered",{
+      condition,
+      supportType:condition==="control"?"none":condition,
+      cardCount:cards.length,
+      cardIds:cards.map(card=>card.id),
+      relationCount:relations.length,
+    },{stage:"recovery",targetType:"recovery_support",targetId:condition});
+  },[cards,condition,relations.length]);
+  useEffect(()=>{
+    if(condition!=="rmw"||!cards.length||viewedTabsRef.current.has(activeTab))return;
+    viewedTabsRef.current.add(activeTab);
+    eventLog("recovery_tab_viewed",{tab:activeTab,cardCount:cards.length},{stage:"recovery",targetType:"recovery_tab",targetId:activeTab});
+  },[activeTab,cards.length,condition]);
   if(condition==="control")return <div className="flex min-h-0 flex-col bg-[#fbfcfe]"><div className="flex h-14 shrink-0 items-center border-b px-5"><h2 className="flex items-center gap-2 font-semibold"><Brain size={20} className="text-primary"/>{locale==="zh-CN"?"继续研究":"Continue research"}</h2></div><div className="m-6 rounded-xl border bg-white p-5 text-sm leading-6 text-muted-foreground">{locale==="zh-CN"?"本组不提供 Problem State、摘要或笔记等恢复辅助。请根据刚才的无辅助回忆继续完成研究任务。":"This condition provides no Problem State, summary, notes, or other recovery aid. Continue the task using your unsupported recall."}</div><PrimaryContinue locale={locale} setScreen={setScreen} t={t}/></div>;
   if(!cards.length)return <RecoveryShell t={t}><div className="m-6 rounded-xl border bg-white p-5 text-sm leading-6 text-muted-foreground">{locale==="zh-CN"?"本次没有保存经过参与者校准的 Problem State，因此不会显示演示卡片。":"No participant-calibrated problem state was saved, so no demo cards are shown."}</div><PrimaryContinue locale={locale} setScreen={setScreen} t={t}/></RecoveryShell>;
   const main=cards.find(card=>card.goalLevel==="main");
@@ -889,7 +934,7 @@ function RecoveryPanel({locale,condition,cards,relations,selected,setSelected,up
     :`Current goal: ${main?.content[locale]||"—"}\nReasoning position: ${position||"—"}\nUncertain: ${uncertain?.content[locale]||"—"}\nRuled out: ${ruled?.content[locale]||"—"}\nNext step: ${next?.content[locale]||"—"}`;
   if(condition==="summary") return <RecoveryShell t={t}><div className="mx-6 mt-4 rounded-xl bg-muted/60 p-5"><p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Auto Summary</p><p className="mt-3 text-sm leading-7">{summary}</p></div><PrimaryContinue locale={locale} setScreen={setScreen} t={t}/></RecoveryShell>;
   if(condition==="notes") return <RecoveryShell t={t}><div className="mx-6 mt-4"><p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Your notes</p><Textarea className="min-h-40 leading-7" defaultValue={notes}/></div><PrimaryContinue locale={locale} setScreen={setScreen} t={t}/></RecoveryShell>;
-  return <RecoveryShell t={t}><Tabs defaultValue="brief" className="flex min-h-0 flex-1 flex-col"><div className="flex items-center justify-between border-b px-5 py-2.5"><TabsList className="inline-flex h-9 items-center justify-center rounded-lg bg-secondary/80 p-1 text-muted-foreground"><TabsTrigger className="inline-flex h-7 items-center justify-center rounded-md px-3.5 text-xs font-medium transition-all data-active:bg-white data-active:text-foreground data-active:shadow-sm" value="brief">{t.resume}</TabsTrigger><TabsTrigger className="inline-flex h-7 items-center justify-center rounded-md px-3.5 text-xs font-medium transition-all data-active:bg-white data-active:text-foreground data-active:shadow-sm" value="cards">{t.cards}</TabsTrigger><TabsTrigger className="inline-flex h-7 items-center justify-center rounded-md px-3.5 text-xs font-medium transition-all data-active:bg-white data-active:text-foreground data-active:shadow-sm" value="network">{t.network}</TabsTrigger></TabsList><span className="text-[10px] font-medium text-muted-foreground">{cards.length} {t.allCards}</span></div>
+  return <RecoveryShell t={t}><Tabs value={activeTab} onValueChange={(value)=>setActiveTab(value as "brief"|"cards"|"network")} className="flex min-h-0 flex-1 flex-col"><div className="flex items-center justify-between border-b px-5 py-2.5"><TabsList className="inline-flex h-9 items-center justify-center rounded-lg bg-secondary/80 p-1 text-muted-foreground"><TabsTrigger className="inline-flex h-7 items-center justify-center rounded-md px-3.5 text-xs font-medium transition-all data-active:bg-white data-active:text-foreground data-active:shadow-sm" value="brief">{t.resume}</TabsTrigger><TabsTrigger className="inline-flex h-7 items-center justify-center rounded-md px-3.5 text-xs font-medium transition-all data-active:bg-white data-active:text-foreground data-active:shadow-sm" value="cards">{t.cards}</TabsTrigger><TabsTrigger className="inline-flex h-7 items-center justify-center rounded-md px-3.5 text-xs font-medium transition-all data-active:bg-white data-active:text-foreground data-active:shadow-sm" value="network">{t.network}</TabsTrigger></TabsList><span className="text-[10px] font-medium text-muted-foreground">{cards.length} {t.allCards}</span></div>
     <TabsContent value="brief" className="m-0 min-h-0 flex-1 overflow-auto"><ResumeBrief locale={locale} cards={cards} t={t}/></TabsContent>
     <TabsContent value="cards" className="m-0 grid min-h-0 flex-1 grid-cols-[1.18fr_.82fr]"><div className="hide-scrollbar min-h-0 overflow-y-auto border-r px-4 py-3"><div className="mb-3 rounded-lg bg-secondary/70 p-3 text-xs leading-5 text-secondary-foreground"><strong>{t.ready}：</strong>{t.readFirst}</div><GoalHierarchy cards={cards} locale={locale} selected={selected} setSelected={setSelected}/><p className="mb-2 mt-4 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Problem state cards</p>{cards.filter(card=>card.cardType!=="goal").map(card=><ReasoningCardView key={card.id} card={card} locale={locale} selected={selected===card.id} onSelect={()=>{setSelected(card.id);eventLog("card_selected",{id:card.id},{stage:"recovery",targetType:"reasoning_card",targetId:card.id})}} updateStatus={updateStatus} t={t}/>)}</div><CardInspector key={`${selected}-${locale}`} card={cards.find(card=>card.id===selected) || cards[0]} locale={locale} updateStatus={updateStatus} togglePin={togglePin} updateContent={updateContent} t={t}/></TabsContent>
     <TabsContent value="network" className="m-0 min-h-0 flex-1"><KnowledgeNetwork locale={locale} cards={cards} relations={relations} selected={selected} setSelected={setSelected}/></TabsContent>

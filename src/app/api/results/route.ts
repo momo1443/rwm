@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { createParticipant, findParticipant, resultStorageMode, saveResultEvent, updateParticipant } from "@/lib/result-store";
+import { createParticipant, findSession, resultStorageMode, saveResultEvent, updateParticipant } from "@/lib/result-store";
 import { getParticipantSessionSecret } from "@/lib/results-server";
 import { createSignedToken, verifySignedToken } from "@/lib/signed-token";
 
 const participantCodeSchema = z.string().regex(/^RMW-[A-F0-9]{8}$/);
+const sessionIdSchema = z.string().uuid();
 const boundedJson = z.unknown().refine((value) => JSON.stringify(value).length <= 200000, "Structured result is too large");
 const snapshotSchema = z.object({
   preSurvey: z.record(z.string(), z.number().int().min(1).max(5)).optional(),
@@ -16,6 +17,7 @@ const snapshotSchema = z.object({
 }).strict();
 const eventSchema = z.object({
   id: z.string().uuid(),
+  sessionId: sessionIdSchema,
   type: z.string().min(1).max(100),
   stage: z.string().min(1).max(100),
   targetType: z.string().max(100).optional(),
@@ -27,6 +29,7 @@ const eventSchema = z.object({
 const requestSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("start"),
+    sessionId: sessionIdSchema,
     participantCode: participantCodeSchema,
     locale: z.enum(["zh-CN", "en"]),
     condition: z.enum(["rmw", "summary", "notes", "control"]),
@@ -40,8 +43,9 @@ const requestSchema = z.discriminatedUnion("action", [
 
 async function participantFromToken(token: string, secret: string) {
   const payload = await verifySignedToken(token, secret);
-  if (payload?.scope !== "participant" || typeof payload.participantCode !== "string") return null;
-  return participantCodeSchema.safeParse(payload.participantCode).success ? payload.participantCode : null;
+  if (payload?.scope !== "participant" || typeof payload.participantCode !== "string" || typeof payload.sessionId !== "string") return null;
+  if (!participantCodeSchema.safeParse(payload.participantCode).success || !sessionIdSchema.safeParse(payload.sessionId).success) return null;
+  return { participantCode: payload.participantCode, sessionId: payload.sessionId };
 }
 
 export async function POST(request: Request) {
@@ -57,30 +61,32 @@ export async function POST(request: Request) {
 
   try {
     if (parsed.data.action === "start") {
-      const { participantCode, locale, condition, taskId, token: resumeToken } = parsed.data;
-      const existing = await findParticipant(participantCode);
+      const { sessionId, participantCode, locale, condition, taskId, token: resumeToken } = parsed.data;
+      const existing = await findSession(sessionId);
       if (existing) {
-        const resumedParticipant = resumeToken ? await participantFromToken(resumeToken, sessionSecret) : null;
-        if (resumedParticipant !== participantCode) {
-          return NextResponse.json({ error: "Participant code is already in use" }, { status: 409 });
+        const resumedSession = resumeToken ? await participantFromToken(resumeToken, sessionSecret) : null;
+        if (resumedSession?.sessionId !== sessionId || resumedSession.participantCode !== participantCode) {
+          return NextResponse.json({ error: "Study session is already in use" }, { status: 409 });
         }
       } else {
-        await createParticipant({ participantCode, locale, condition, taskId });
+        await createParticipant({ sessionId, participantCode, locale, condition, taskId });
       }
       const token = await createSignedToken({
         scope: "participant",
         participantCode,
+        sessionId,
         exp: Date.now() + 12 * 60 * 60 * 1000,
       }, sessionSecret);
-      return NextResponse.json({ mode: storageMode, token });
+      return NextResponse.json({ mode: storageMode, token, sessionId });
     }
 
-    const participantCode = await participantFromToken(parsed.data.token, sessionSecret);
-    if (!participantCode) return NextResponse.json({ error: "Invalid participant session" }, { status: 401 });
+    const session = await participantFromToken(parsed.data.token, sessionSecret);
+    if (!session) return NextResponse.json({ error: "Invalid participant session" }, { status: 401 });
 
     if (parsed.data.action === "event") {
       const event = parsed.data.event;
-      await saveResultEvent(participantCode, {
+      if (event.sessionId !== session.sessionId) return NextResponse.json({ error: "Event session does not match token" }, { status: 403 });
+      await saveResultEvent(session.sessionId, session.participantCode, {
         id: event.id,
         sequence_number: event.sequenceNumber,
         event_type: event.type,
@@ -94,7 +100,7 @@ export async function POST(request: Request) {
     }
 
     const data = parsed.data.data;
-    await updateParticipant(participantCode, {
+    await updateParticipant(session.sessionId, {
       ...(data.preSurvey !== undefined && { pre_survey: data.preSurvey }),
       ...(data.memo !== undefined && { memo: data.memo }),
       ...(data.chat !== undefined && { chat: data.chat }),
