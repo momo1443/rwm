@@ -1,6 +1,7 @@
+import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { deleteParticipant, readAllResults, resultStorageMode, reviewParticipant } from "@/lib/result-store";
+import { deleteParticipant, readAllResults, resultStorageMode, reviewBlindOutcome, reviewParticipant } from "@/lib/result-store";
 import { chatCounts, interruptionMetrics, taskMilestones } from "@/lib/admin-result-metrics";
 import { ADMIN_COOKIE, getResearcherAuthConfig } from "@/lib/results-server";
 import { verifySignedToken } from "@/lib/signed-token";
@@ -20,7 +21,23 @@ const reviewSchema = z.object({
   exclusionReason: z.string().trim().max(120).nullable().optional(),
   reviewNote: z.string().trim().max(1000).nullable().optional(),
 });
+const rubricScoresSchema = z.object({
+  goal_continuity: z.number().int().min(0).max(4),
+  reasoning_position: z.number().int().min(0).max(4),
+  evidence_integration: z.number().int().min(0).max(4),
+  uncertainty_preservation: z.number().int().min(0).max(4),
+  actionable_next_step: z.number().int().min(0).max(4),
+}).strict();
+const blindReviewSchema = z.object({
+  blindId: z.string().regex(/^B-[A-F0-9]{12}$/),
+  blindReviewScores: z.object({ before: rubricScoresSchema, after: rubricScoresSchema }).strict(),
+  blindReviewNote: z.string().trim().max(2000).nullable().optional(),
+});
 const deleteSchema = z.object({ sessionId: sessionIdSchema, confirmation: z.string() });
+
+function blindIdFor(sessionId: string) {
+  return `B-${createHash("sha256").update(sessionId).digest("hex").slice(0, 12).toUpperCase()}`;
+}
 
 function unavailable() {
   return !getResearcherAuthConfig() || !resultStorageMode();
@@ -34,6 +51,21 @@ export async function GET(request: NextRequest) {
 
   try {
     const database = await readAllResults();
+    if (request.nextUrl.searchParams.get("view") === "blind") {
+      const eligible = database.results
+        .filter((result) => result.status === "completed" && (result.analysis_status || "included") === "included" && result.phase_one_captured_at && result.phase_one_memo !== null && result.memo !== null)
+        .map((result) => ({
+          blind_id: blindIdFor(result.session_id),
+          locale: result.locale,
+          phase_one_memo: result.phase_one_memo,
+          final_memo: result.memo,
+          blind_review_scores: result.blind_review_scores,
+          blind_review_note: result.blind_review_note,
+          blind_reviewed_at: result.blind_reviewed_at,
+        }))
+        .sort((left, right) => left.blind_id.localeCompare(right.blind_id));
+      return NextResponse.json({ mode: resultStorageMode(), rubricVersion: "recovery-outcome-v1", results: eligible });
+    }
     const exportMode = request.nextUrl.searchParams.get("export");
     if (exportMode === "1" || exportMode === "analysis") {
       const results = exportMode === "analysis"
@@ -41,7 +73,7 @@ export async function GET(request: NextRequest) {
         : database.results;
       const sessionIds = new Set(results.map((result) => result.session_id));
       return NextResponse.json({
-        schemaVersion: "rmw-research-results-v4",
+        schemaVersion: "rmw-research-results-v5",
         storageMode: resultStorageMode(),
         exportedAt: new Date().toISOString(),
         exportMode: exportMode === "analysis" ? "analysis-ready" : "all-raw",
@@ -123,7 +155,27 @@ export async function GET(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   if (unavailable()) return NextResponse.json({ error: "Research result storage is not configured" }, { status: 503 });
   if (!await isAuthorized(request)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const parsed = reviewSchema.safeParse(await request.json().catch(() => null));
+  const body = await request.json().catch(() => null);
+  const blindParsed = blindReviewSchema.safeParse(body);
+  if (blindParsed.success) {
+    try {
+      const database = await readAllResults();
+      const result = database.results.find((candidate) => blindIdFor(candidate.session_id) === blindParsed.data.blindId);
+      if (!result) return NextResponse.json({ error: "Blind review item not found" }, { status: 404 });
+      if (result.status !== "completed" || (result.analysis_status || "included") !== "included" || !result.phase_one_captured_at) {
+        return NextResponse.json({ error: "Result is not eligible for blind review" }, { status: 409 });
+      }
+      await reviewBlindOutcome(result.session_id, {
+        scores: blindParsed.data.blindReviewScores,
+        note: blindParsed.data.blindReviewNote || null,
+      });
+      return NextResponse.json({ ok: true });
+    } catch (error) {
+      console.error("Blind result review failed", { storageMode: resultStorageMode(), error });
+      return NextResponse.json({ error: "Could not save blind review" }, { status: 502 });
+    }
+  }
+  const parsed = reviewSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "Invalid review update" }, { status: 400 });
   if (parsed.data.analysisStatus !== "included" && !parsed.data.exclusionReason) {
     return NextResponse.json({ error: "An exclusion reason is required" }, { status: 400 });

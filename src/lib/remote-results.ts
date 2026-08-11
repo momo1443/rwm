@@ -9,6 +9,9 @@ const EVENT_OUTBOX_PREFIX = "rmw-result-event-outbox";
 type ChatTurn = { role: "user" | "assistant"; text: string };
 type Snapshot = {
   preSurvey?: Record<string, number>;
+  phaseOneMemo?: string;
+  phaseOneChat?: ChatTurn[];
+  phaseOneCapturedAt?: string;
   memo?: string;
   chat?: ChatTurn[];
   problemState?: ProblemStateSnapshot | null;

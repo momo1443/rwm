@@ -1,4 +1,5 @@
 import path from "node:path";
+import type { BlindReviewScoreSet } from "./blind-review";
 import { getResultStorageConfig } from "./results-server";
 
 export type ParticipantResultRow = {
@@ -11,6 +12,9 @@ export type ParticipantResultRow = {
   consented_at: string;
   completed_at: string | null;
   pre_survey: Record<string, number> | null;
+  phase_one_memo: string | null;
+  phase_one_chat: unknown;
+  phase_one_captured_at: string | null;
   memo: string | null;
   chat: unknown;
   problem_state: unknown;
@@ -20,12 +24,14 @@ export type ParticipantResultRow = {
   exclusion_reason: string | null;
   review_note: string | null;
   reviewed_at: string | null;
+  blind_review_scores: BlindReviewScoreSet | null;
+  blind_review_note: string | null;
+  blind_reviewed_at: string | null;
   created_at: string;
   updated_at: string;
 };
 
 export type AnalysisStatus = "included" | "excluded" | "trashed";
-
 export type ResultEventRow = {
   id: string;
   session_id: string;
@@ -42,12 +48,13 @@ export type ResultEventRow = {
 
 export type ResultDatabase = { results: ParticipantResultRow[]; events: ResultEventRow[] };
 export type ResultEventInput = Omit<ResultEventRow, "session_id" | "participant_code" | "server_timestamp">;
-export type ResultUpdate = Partial<Pick<ParticipantResultRow, "pre_survey" | "memo" | "chat" | "problem_state" | "recall" | "recovery_state">>;
+export type ResultUpdate = Partial<Pick<ParticipantResultRow, "pre_survey" | "phase_one_memo" | "phase_one_chat" | "phase_one_captured_at" | "memo" | "chat" | "problem_state" | "recall" | "recovery_state">>;
 export type ReviewUpdate = {
   analysisStatus: AnalysisStatus;
   exclusionReason: string | null;
   reviewNote: string | null;
 };
+export type BlindReviewUpdate = { scores: BlindReviewScoreSet; note: string | null };
 
 const EMPTY_DATABASE: ResultDatabase = { results: [], events: [] };
 let localWriteQueue = Promise.resolve();
@@ -144,6 +151,9 @@ export async function createParticipant(input: { sessionId: string; participantC
     consented_at: now,
     completed_at: null,
     pre_survey: null,
+    phase_one_memo: null,
+    phase_one_chat: null,
+    phase_one_captured_at: null,
     memo: null,
     chat: null,
     problem_state: null,
@@ -153,6 +163,9 @@ export async function createParticipant(input: { sessionId: string; participantC
     exclusion_reason: null,
     review_note: null,
     reviewed_at: null,
+    blind_review_scores: null,
+    blind_review_note: null,
+    blind_reviewed_at: null,
     created_at: now,
     updated_at: now,
   };
@@ -168,6 +181,9 @@ export async function createParticipant(input: { sessionId: string; participantC
   delete supabaseRow.exclusion_reason;
   delete supabaseRow.review_note;
   delete supabaseRow.reviewed_at;
+  delete supabaseRow.blind_review_scores;
+  delete supabaseRow.blind_review_note;
+  delete supabaseRow.blind_reviewed_at;
   await supabaseRequest("participant_results", { method: "POST", headers: { prefer: "return=minimal" }, body: JSON.stringify(supabaseRow) });
 }
 
@@ -199,7 +215,10 @@ export async function updateParticipant(sessionId: string, update: ResultUpdate,
     await updateLocalDatabase(config.directory, (database) => {
       const result = database.results.find((candidate) => candidate.session_id === sessionId);
       if (!result) throw new Error("Participant not found");
-      Object.assign(result, patch);
+      const protectedPatch = result.phase_one_captured_at
+        ? Object.fromEntries(Object.entries(patch).filter(([key]) => !key.startsWith("phase_one_")))
+        : patch;
+      Object.assign(result, protectedPatch);
     });
     return;
   }
@@ -229,6 +248,29 @@ export async function reviewParticipant(sessionId: string, update: ReviewUpdate)
     exclusion_reason: update.analysisStatus === "included" ? null : update.exclusionReason,
     review_note: update.reviewNote,
     reviewed_at: new Date().toISOString(),
+  };
+  if (config.mode === "local") {
+    await updateLocalDatabase(config.directory, (database) => {
+      const result = database.results.find((candidate) => candidate.session_id === sessionId);
+      if (!result) throw new Error("Participant not found");
+      Object.assign(result, patch);
+    });
+    return;
+  }
+  await supabaseRequest(`participant_results?session_id=eq.${encodeURIComponent(sessionId)}`, {
+    method: "PATCH",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify(patch),
+  });
+}
+
+export async function reviewBlindOutcome(sessionId: string, update: BlindReviewUpdate) {
+  const config = getResultStorageConfig();
+  if (!config) throw new Error("Result storage is not configured");
+  const patch = {
+    blind_review_scores: update.scores,
+    blind_review_note: update.note,
+    blind_reviewed_at: new Date().toISOString(),
   };
   if (config.mode === "local") {
     await updateLocalDatabase(config.directory, (database) => {

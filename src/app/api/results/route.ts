@@ -9,6 +9,9 @@ const sessionIdSchema = z.string().uuid();
 const boundedJson = z.unknown().refine((value) => JSON.stringify(value).length <= 200000, "Structured result is too large");
 const snapshotSchema = z.object({
   preSurvey: z.record(z.string(), z.number().int().min(1).max(5)).optional(),
+  phaseOneMemo: z.string().max(20000).optional(),
+  phaseOneChat: z.array(z.object({ role: z.enum(["user", "assistant"]), text: z.string().max(8000) })).max(60).optional(),
+  phaseOneCapturedAt: z.string().datetime().optional(),
   memo: z.string().max(20000).optional(),
   chat: z.array(z.object({ role: z.enum(["user", "assistant"]), text: z.string().max(8000) })).max(60).optional(),
   problemState: boundedJson.optional(),
@@ -102,6 +105,9 @@ export async function POST(request: Request) {
     const data = parsed.data.data;
     await updateParticipant(session.sessionId, {
       ...(data.preSurvey !== undefined && { pre_survey: data.preSurvey }),
+      ...(data.phaseOneMemo !== undefined && { phase_one_memo: data.phaseOneMemo }),
+      ...(data.phaseOneChat !== undefined && { phase_one_chat: data.phaseOneChat }),
+      ...(data.phaseOneCapturedAt !== undefined && { phase_one_captured_at: data.phaseOneCapturedAt }),
       ...(data.memo !== undefined && { memo: data.memo }),
       ...(data.chat !== undefined && { chat: data.chat }),
       ...(data.problemState !== undefined && { problem_state: data.problemState }),

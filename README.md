@@ -21,10 +21,11 @@ Open `http://localhost:3000`. Useful review routes:
 - `/?view=recovery&condition=summary&lang=en` — English Auto Summary condition
 - `/?view=recall` — unsupported recall gate
 - `/admin` — password-protected researcher results console
+- `/admin/blind-review` — condition-blinded pre/post memo rubric
 
 The participant flow uses one fixed task and does not expose a topic chooser. The entry screen exposes condition selection for researcher testing; a formal study should assign the condition through a randomized study link rather than participant choice. Configure `.env.local` from `.env.example` to enable DeepSeek and result collection.
 
-The current build starts in **test mode**: timing gates are bypassed so every screen can be reviewed immediately. Add `?timed=1` to a direct route to check the formal protocol. The formal Phase 1 duration is 10 minutes; its save window opens in the final three minutes.
+The current build starts in the **formal timed protocol**. Phase 1 and recovery each last 10 minutes; Phase 1's save window opens in the final three minutes, and formal recovery cannot end early. Add `?test=1` only for local interface review.
 
 ## DeepSeek
 
@@ -61,7 +62,7 @@ The demo now follows one closed-loop interruption protocol:
 
 The `control` condition bypasses Problem State extraction and calibration. After the same interruption, it records the same unsupported-recall responses and returns the participant to the task without showing Problem State, a summary, or notes.
 
-For local review, test mode is the default and bypasses the Phase 1 and checkpoint waiting gates. Append `?timed=1` (or `&timed=1` when a query already exists) to enforce the 10-minute Phase 1 gate and one-minute save window.
+For local review, append `?test=1` (or `&test=1` when a query already exists) to bypass timing gates. Without that explicit flag, the formal 10-minute Phase 1, one-minute checkpoint, and 10-minute recovery timing are enforced.
 
 The DeepSeek tutor uses a conversational research-partner prompt: it responds to the participant's current intent, uses ordinary short paragraphs, structures only when useful, cites materials for consequential claims, and preserves uncertainty without forcing fixed labels or a repeated answer template. The extraction prompt separately produces the bounded reasoning-card set and relations for the knowledge network from the same trace.
 
@@ -69,7 +70,7 @@ The DeepSeek tutor uses a conversational research-partner prompt: it responds to
 
 The participant client can only write through `/api/results`; it has no result-reading endpoint. Each write after consent requires a short-lived token signed by the server. `/api/research/results` requires a separate researcher session stored in an `HttpOnly`, `SameSite=Strict` cookie, and `/admin` is marked `noindex`. Database credentials and the researcher password never enter the participant bundle.
 
-The system saves the pre-survey, memo, AI conversation, calibrated Problem State, unsupported recall, recovery-state edits, completion status, and interaction events. Browser outboxes retain unsent snapshots and events and retry them after a participant session becomes available.
+The system saves the pre-survey, an immutable pre-interruption memo/chat snapshot, final memo and AI conversation, calibrated Problem State, unsupported recall, recovery-state edits, completion status, and interaction events. Memo and AI events carry the actual `research_work` or `recovery` stage. Browser outboxes retain unsent snapshots and events and retry them after a participant session becomes available.
 
 For local rehearsal, set these server-side values. Results are written to `.rmw-results/results.json`; this mode is for one trusted machine only.
 
@@ -80,7 +81,7 @@ RESEARCHER_ADMIN_PASSWORD=replace-with-a-strong-researcher-password
 RESEARCHER_SESSION_SECRET=replace-with-a-different-long-random-secret
 ```
 
-For a deployed website, apply `supabase/migrations/202608100001_researcher_results.sql`, omit `RMW_LOCAL_RESULTS_DIR`, and configure:
+For a deployed website, apply all files in `supabase/migrations/` in timestamp order, including `20260811140353_recovery_outcome_metrics.sql`, omit `RMW_LOCAL_RESULTS_DIR`, and configure:
 
 ```bash
 SUPABASE_URL=https://your-project.supabase.co
