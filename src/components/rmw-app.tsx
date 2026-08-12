@@ -847,9 +847,10 @@ function Workspace({
 
 function MaterialsPanel({locale,taskId,phase,t}:{locale:Locale;taskId:ResearchTaskId;phase:"work"|"recovery";t:typeof copy[Locale]}) {
   const task=getResearchTask(taskId);
-  const materials=getTaskMaterials(taskId,phase);
+  const materials=useMemo(()=>getTaskMaterials(taskId,phase),[phase,taskId]);
   const [active,setActive]=useState(()=>phase==="recovery"?task.recoveryMaterial.id:materials[0].id);
   const [read,setRead]=useState<Set<string>>(()=>new Set());
+  const [readingSeconds,setReadingSeconds]=useState(5);
   const presentedRef=useRef(new Set<string>());
   const completedRef=useRef(new Set<string>());
   const stage=phase==="work"?"research_work":"recovery";
@@ -859,22 +860,28 @@ function MaterialsPanel({locale,taskId,phase,t}:{locale:Locale;taskId:ResearchTa
       eventLog("material_presented",{taskId,phase,initial:active===materials[0].id},{stage,targetType:"material",targetId:active});
     }
     const startedAt=Date.now();
+    const progressTimer=window.setInterval(()=>{
+      setReadingSeconds(Math.max(1,Math.ceil((5_000-(Date.now()-startedAt))/1_000)));
+    },250);
     const timer=window.setTimeout(()=>{
-      if(completedRef.current.has(active))return;
+      if(completedRef.current.has(active)){setReadingSeconds(0);return}
       completedRef.current.add(active);
       setRead(current=>new Set([...current,active]));
+      setReadingSeconds(0);
       eventLog("material_exposure_completed",{taskId,phase,durationMs:Date.now()-startedAt,completionRule:"active_for_5_seconds"},{stage,targetType:"material",targetId:active});
     },5_000);
-    return()=>window.clearTimeout(timer);
+    return()=>{window.clearInterval(progressTimer);window.clearTimeout(timer)};
   },[active,materials,phase,stage,taskId]);
   const openMaterial=(id:string)=>{
+    if(id===active)return;
     setActive(id);
+    setReadingSeconds(completedRef.current.has(id)?0:5);
     eventLog("material_opened",{id,taskId,phase},{stage,targetType:"material",targetId:id});
   };
   return <aside data-tour="materials" className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-[#fbfaf7]">
     <div className="flex h-14 shrink-0 items-center justify-between border-b px-5"><h2 className="flex items-center gap-2 font-semibold"><BookOpenText size={20}/>{t.materials}</h2><Badge variant="outline" className="text-[10px]">{materials.length} {locale==="zh-CN"?"份材料":"sources"}</Badge></div>
     <div className="shrink-0 px-5 py-4"><div className="mb-2 flex justify-between text-xs text-muted-foreground"><span>{t.progress}</span><span>{read.size} / {materials.length}</span></div><Progress value={(read.size/materials.length)*100} className="h-1.5"/></div>
-    <div className="panel-scroll min-h-0 flex-1 overflow-y-auto px-3 pb-4">{materials.map(material=><button key={material.id} onClick={()=>openMaterial(material.id)} className={`mb-2 w-full rounded-xl px-3 py-4 text-left transition ${material.recoveryOnly?"border border-amber-200 bg-amber-50/55":""} ${active===material.id?"bg-white shadow-[0_5px_18px_rgba(35,43,70,.07)] ring-1 ring-primary/15":"hover:bg-white/80"}`}><div className="mb-2 flex items-center justify-between"><span className="grid size-6 place-items-center rounded-md bg-secondary text-xs font-semibold text-primary">{material.n}</span>{material.recoveryOnly?<Badge className="bg-amber-600 text-[9px]">{locale==="zh-CN"?"中断后新增":"NEW"}</Badge>:read.has(material.id)&&<span className="flex items-center gap-1 text-[10px] text-[var(--active)]"><Check size={12}/>{locale==="zh-CN"?"已阅读":"Read"}</span>}</div><h3 className="text-sm font-semibold leading-5">{material.title[locale]}</h3><p className={`mt-2 whitespace-pre-line text-xs leading-5 text-muted-foreground ${active===material.id?"":"line-clamp-3"}`}>{material.excerpt[locale]}</p><p className="mt-3 text-[10px] text-primary">{material.meta[locale]}</p></button>)}</div>
+    <div className="panel-scroll min-h-0 flex-1 overflow-y-auto px-3 pb-4">{materials.map(material=><button key={material.id} onClick={()=>openMaterial(material.id)} className={`mb-2 w-full rounded-xl px-3 py-4 text-left transition ${material.recoveryOnly?"border border-amber-200 bg-amber-50/55":""} ${active===material.id?"bg-white shadow-[0_5px_18px_rgba(35,43,70,.07)] ring-1 ring-primary/15":"hover:bg-white/80"}`}><div className="mb-2 flex items-center justify-between"><span className="grid size-6 place-items-center rounded-md bg-secondary text-xs font-semibold text-primary">{material.n}</span>{read.has(material.id)?<span className="flex items-center gap-1 text-[10px] text-[var(--active)]"><Check size={12}/>{locale==="zh-CN"?"已阅读":"Read"}</span>:active===material.id?<span className="text-[10px] text-primary">{locale==="zh-CN"?`阅读中 · ${readingSeconds} 秒`:`Reading · ${readingSeconds}s`}</span>:material.recoveryOnly?<Badge className="bg-amber-600 text-[9px]">{locale==="zh-CN"?"中断后新增":"NEW"}</Badge>:null}</div><h3 className="text-sm font-semibold leading-5">{material.title[locale]}</h3><p className={`mt-2 whitespace-pre-line text-xs leading-5 text-muted-foreground ${active===material.id?"":"line-clamp-3"}`}>{material.excerpt[locale]}</p><p className="mt-3 text-[10px] text-primary">{material.meta[locale]}</p></button>)}</div>
   </aside>;
 }
 
