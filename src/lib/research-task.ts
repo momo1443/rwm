@@ -149,7 +149,7 @@ const tasks: Record<ResearchTaskId, ResearchTask> = {
   city_policy: {
     id: "city_policy",
     code: "D",
-    label: { "zh-CN": "城市治理方案决策", en: "City policy decision" },
+    label: { "zh-CN": "决策任务", en: "Decision task" },
     eyebrow: { "zh-CN": "多标准复杂决策", en: "Multi-criteria decision" },
     question: {
       "zh-CN": "和安市应在未来三年选择哪一种城市生活垃圾治理方案？请在成本、公平性、执行难度、环境收益和居民接受度之间作出可辩护的权衡。",
@@ -176,7 +176,7 @@ const tasks: Record<ResearchTaskId, ResearchTask> = {
   ai_course_policy: {
     id: "ai_course_policy",
     code: "E",
-    label: { "zh-CN": "大学课程中的生成式 AI", en: "Generative AI in university courses" },
+    label: { "zh-CN": "伦理任务", en: "Ethics task" },
     eyebrow: { "zh-CN": "证据综合与论证构建", en: "Evidence synthesis and argument construction" },
     question: { "zh-CN": "大学是否应该限制生成式 AI 在课程学习与考核中的使用？请综合证据形成有条件、可反驳的立场。", en: "Should universities restrict generative AI in coursework and assessment? Synthesize the evidence into a conditional, falsifiable position." },
     description: { "zh-CN": "综合学习、诚信、可及性、自主性、评价效度和教师负担方面的证据。", en: "Synthesize evidence on learning, integrity, accessibility, agency, assessment validity, and faculty workload." },
@@ -201,7 +201,7 @@ const tasks: Record<ResearchTaskId, ResearchTask> = {
   night_transit: {
     id: "night_transit",
     code: "P",
-    label: { "zh-CN": "校园夜间交通服务", en: "Campus night transport" },
+    label: { "zh-CN": "创造性任务", en: "Creative task" },
     eyebrow: { "zh-CN": "约束条件下的规划设计", en: "Planning under constraints" },
     question: { "zh-CN": "请为和安大学设计一套校园夜间交通服务，在预算、无障碍、安全、人员、运营时段和环境影响之间取得平衡。", en: "Design a campus night-transport service for He'an University, balancing budget, accessibility, safety, staffing, operating hours, and environmental impact." },
     description: { "zh-CN": "比较服务架构，形成当前设计，并说明尚未解决的问题。", en: "Compare service architectures, form a current design, and identify unresolved issues." },
@@ -248,8 +248,13 @@ export function researchTaskMetadata(taskId: string) {
     recoveryMaterialId: null,
   };
   const task = getResearchTask(taskId);
+  const adminLabel: Record<ResearchTaskId, string> = {
+    city_policy: "决策任务（城市治理多标准复杂决策）",
+    ai_course_policy: "伦理任务（大学课程生成式 AI 使用伦理）",
+    night_transit: "创造性任务（约束下设计校园夜间交通服务）",
+  };
   return {
-    label: task.label["zh-CN"],
+    label: adminLabel[taskId],
     initialMaterialCount: task.materials.length,
     firstMaterialId: task.materials[0].id,
     recoveryMaterialId: task.recoveryMaterial.id,

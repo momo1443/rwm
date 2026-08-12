@@ -222,7 +222,7 @@ function Landing({
           <div className="mt-3 grid gap-2">
             {researchTasks.map(task=><label key={task.id} className={`cursor-pointer rounded-xl border px-3 py-3 text-sm transition ${taskId===task.id?"border-primary bg-secondary/65 text-primary":"bg-white hover:border-primary/45"}`}>
               <input type="radio" name="task" value={task.id} checked={taskId===task.id} onChange={()=>setTaskId(task.id)} className="mr-2 accent-[var(--primary)]"/>
-              <span className="font-medium">{task.label[locale]}</span><span className="ml-2 text-xs text-muted-foreground">{task.eyebrow[locale]}</span>
+              <span className="font-medium">{task.label[locale]}</span>
             </label>)}
           </div>
         </fieldset>
@@ -231,9 +231,9 @@ function Landing({
           <p className="mt-1 text-xs leading-5 text-muted-foreground">{locale==="zh-CN"?"此选项用于研究者测试。正式实验建议由系统随机分组。":"For researcher testing. Formal studies should assign conditions randomly."}</p>
           <div className="mt-3 grid gap-2">
             {([
-              {value:"rmw",zh:"完整 RMW",en:"Full RMW"},
-              {value:"rmw_no_summary",zh:"RMW（无 AI 摘要）",en:"RMW without AI summary"},
-              {value:"summary_only",zh:"仅 AI 摘要",en:"AI summary only"},
+              {value:"rmw",zh:"方式一",en:"Method 1"},
+              {value:"rmw_no_summary",zh:"方式二",en:"Method 2"},
+              {value:"summary_only",zh:"方式三",en:"Method 3"},
             ] as const).map(option=><label key={option.value} className={`cursor-pointer rounded-xl border px-3 py-3 text-sm transition ${condition===option.value?"border-primary bg-secondary/65 text-primary":"bg-white hover:border-primary/45"}`}>
               <input type="radio" name="condition" value={option.value} checked={condition===option.value} onChange={()=>setCondition(option.value)} className="mr-2 accent-[var(--primary)]"/>
               {locale==="zh-CN"?option.zh:option.en}

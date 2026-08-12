@@ -65,7 +65,19 @@ type AccessState = "loading" | "login" | "ready" | "unavailable";
 type DetailTab = "overview" | "survey" | "interruption" | "task" | "chat" | "events" | "raw";
 
 const statusLabels: Record<AnalysisStatus, string> = { included: "纳入分析", excluded: "排除分析", trashed: "回收站" };
-const conditionLabels: Record<string, string> = { rmw: "完整 RMW", rmw_no_summary: "RMW（无 AI 摘要）", summary_only: "仅 AI 摘要", summary: "旧版自动摘要", notes: "旧版用户笔记", control: "旧版无辅助对照" };
+const conditionLabels: Record<string, string> = {
+  rmw: "方式一",
+  rmw_no_summary: "方式二",
+  summary_only: "方式三",
+  summary: "旧版自动摘要",
+  notes: "旧版用户笔记",
+  control: "旧版无辅助对照",
+};
+const activeConditionDefinitions = [
+  { id: "rmw", label: "方式一", description: "完整 RMW：AI 恢复摘要、推理卡片与知识网络。" },
+  { id: "rmw_no_summary", label: "方式二", description: "RMW 无 AI 摘要：仅提供推理卡片与知识网络。" },
+  { id: "summary_only", label: "方式三", description: "仅提供 AI 恢复摘要，不提供推理卡片或知识网络。" },
+] as const;
 const exclusionReasons = ["研究者测试", "自动化或非真实被试", "未完成实验", "技术故障", "重复记录", "不符合纳入标准", "被试要求撤回", "其他"];
 
 function formatTime(value: string | null) {
@@ -140,6 +152,10 @@ function CohortOverview({ results }: { results: ResultSummary[] }) {
     <article className="rounded-xl border bg-white p-5"><h2 className="font-semibold">任务 × 条件样本分布</h2><p className="mt-1 text-xs text-muted-foreground">避免把不同任务直接混为同一实验单元</p><div className="mt-4 overflow-x-auto"><table className="w-full text-xs"><thead><tr><th className="p-2 text-left">任务</th>{conditions.map(condition=><th key={condition} className="p-2 text-center">{conditionLabels[condition]||condition}</th>)}</tr></thead><tbody>{tasks.map(taskId=><tr key={taskId} className="border-t"><td className="p-2 font-medium">{researchTaskMetadata(taskId).label}</td>{conditions.map(condition=><td key={condition} className="p-2 text-center font-mono">{results.filter(result=>result.task_id===taskId&&result.condition===condition).length}</td>)}</tr>)}</tbody></table></div></article>
     <article className="rounded-xl border bg-white p-5"><h2 className="font-semibold">前测维度概览</h2><p className="mt-1 text-xs text-muted-foreground">仅统计“纳入分析且已完成”的被试；不同维度不合并</p><div className="mt-4 grid gap-3 sm:grid-cols-2">{aggregates.map(({ subscale, value, n }) => <ScoreBar key={subscale} label={subscale} value={value} n={n}/>)}</div></article>
   </section>;
+}
+
+function ConditionDesignLegend() {
+  return <section className="mb-6 rounded-xl border bg-white p-5"><h2 className="font-semibold">恢复方式定义</h2><p className="mt-1 text-xs text-muted-foreground">以下机制说明仅在研究者后台显示；参与者入口只显示“方式一、方式二、方式三”。</p><div className="mt-4 grid gap-3 lg:grid-cols-3">{activeConditionDefinitions.map(item=><article key={item.id} className="rounded-lg border p-4"><Badge>{item.label}</Badge><p className="mt-3 text-xs leading-5 text-muted-foreground">{item.description}</p><p className="mt-2 font-mono text-[9px] text-muted-foreground">{item.id}</p></article>)}</div></section>;
 }
 
 function formatPercent(value: number | null) {
@@ -310,6 +326,7 @@ export function AdminDashboard() {
     <main className="mx-auto max-w-[1580px] p-7">
       {error && <div className="mb-5 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"><WarningCircle/>{error}<button className="ml-auto" onClick={() => setError("")} aria-label="关闭提示">×</button></div>}
       <section className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-5"><article className="rounded-xl border bg-white p-5"><Users className="text-primary"/><p className="mt-3 text-3xl font-semibold">{results.length}</p><p className="mt-1 text-sm text-muted-foreground">全部记录</p></article><article className="rounded-xl border bg-white p-5"><CheckCircle className="text-emerald-600"/><p className="mt-3 text-3xl font-semibold">{completed}</p><p className="mt-1 text-sm text-muted-foreground">已完成</p></article><article className="rounded-xl border bg-white p-5"><Brain className="text-primary"/><p className="mt-3 text-3xl font-semibold">{included}</p><p className="mt-1 text-sm text-muted-foreground">纳入分析</p></article><article className="rounded-xl border bg-white p-5"><WarningCircle className="text-amber-600"/><p className="mt-3 text-3xl font-semibold">{excluded}</p><p className="mt-1 text-sm text-muted-foreground">排除分析</p></article><article className="rounded-xl border bg-white p-5"><Trash className="text-slate-500"/><p className="mt-3 text-3xl font-semibold">{trashed}</p><p className="mt-1 text-sm text-muted-foreground">回收站</p></article></section>
+      <ConditionDesignLegend/>
       <CohortOverview results={results}/>
       <StudyOutcomeOverview results={results}/>
       <div className="grid gap-5 xl:grid-cols-[1.05fr_.95fr]">

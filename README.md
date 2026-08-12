@@ -12,9 +12,9 @@ npm run dev
 Open `http://localhost:3000`. Useful review routes:
 
 - `/` — participant entry and full demo flow
-- `/?condition=rmw` — full RMW with recovery brief, reasoning cards, and network
-- `/?condition=rmw_no_summary` — RMW cards and network without the AI recovery summary
-- `/?condition=summary_only` — AI recovery summary only
+- `/?condition=rmw` — participant-facing Method 1; full RMW with recovery brief, reasoning cards, and network
+- `/?condition=rmw_no_summary` — participant-facing Method 2; RMW cards and network without the AI recovery summary
+- `/?condition=summary_only` — participant-facing Method 3; AI recovery summary only
 - `/?task=city_policy` — multi-criteria city-policy decision
 - `/?task=ai_course_policy` — evidence synthesis about generative AI in university courses
 - `/?task=night_transit` — campus night-transport planning under constraints
