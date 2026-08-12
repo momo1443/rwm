@@ -65,7 +65,7 @@ The demo now follows one closed-loop interruption protocol:
 7. Resume with a minimal brief first, then reasoning cards, source backlinks, and the knowledge network.
 8. Continue research with editable reasoning cards while the local interaction history supports the current browser session.
 
-The three conditions share the same task, checkpoint, interruption, unsupported recall, and fixed recovery duration. Full `rmw` shows the recovery brief, reasoning cards, and network; `rmw_no_summary` shows the cards and network without the brief; `summary_only` shows only the AI-generated recovery summary.
+The three conditions share the same task, interruption, unsupported recall, and fixed recovery duration. Full `rmw` shows the recovery brief, reasoning cards, and network; `rmw_no_summary` serves as the self-notes baseline (providing no AI recovery summary, cards, or network; participants rely on their own workspace notes); `summary_only` extracts the problem state automatically in the background during the save window (without showing card rehearsal UI to participants) and shows only the AI-generated recovery summary post-interruption.
 
 For local review, append `?test=1` (or `&test=1` when a query already exists) to bypass timing gates. Without that explicit flag, the formal 10-minute Phase 1, one-minute checkpoint, and 10-minute recovery timing are enforced.
 

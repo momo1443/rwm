@@ -451,6 +451,7 @@ function CheckpointGuide({ locale, open, onOpenChange }: { locale: Locale; open:
 
 export function RmwCheckpoint({
   locale,
+  condition,
   taskId,
   memo,
   messages,
@@ -459,6 +460,7 @@ export function RmwCheckpoint({
   onContinue,
 }: {
   locale: Locale;
+  condition: Condition;
   taskId: ResearchTaskId;
   memo: string;
   messages: Array<{ role: "user" | "assistant"; text: string }>;
@@ -586,11 +588,19 @@ export function RmwCheckpoint({
       <header className="flex items-end justify-between py-6">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">{t.title}</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{t.subtitle}</p>
-          {mode === "live" && <p className="mt-2 max-w-3xl text-xs leading-5 text-primary">{t.calibrateHint}</p>}
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
+            {condition === "rmw_no_summary"
+              ? (locale === "zh-CN" ? "系统已自动保存你的工作区 memo 与对话。为保障基线对照纯净度，本组别不向被试展示中间推导卡片与网络校准界面。" : "Your workspace memo and chat history have been saved. Card display and calibration UI are omitted for this baseline condition to avoid pre-interruption rehearsal.")
+              : condition === "summary_only"
+                ? (locale === "zh-CN" ? "系统正在结合你的 memo 与对话在后台自动整理 Problem State。为保障基线对照纯净度，本组别不向被试展示中间推导卡片与网络校准界面。" : "The system is auto-extracting problem state in the background. Card display and calibration UI are omitted for this baseline condition to avoid pre-interruption rehearsal.")
+                : t.subtitle}
+          </p>
+          {condition === "rmw" && mode === "live" && <p className="mt-2 max-w-3xl text-xs leading-5 text-primary">{t.calibrateHint}</p>}
         </div>
         <div className="flex items-center gap-3">
-          <Badge variant={mode === "live" ? "default" : "secondary"}>{modeLabel}</Badge>
+          <Badge variant={condition === "rmw_no_summary" ? "outline" : mode === "live" ? "default" : "secondary"}>
+            {condition === "rmw_no_summary" ? (locale === "zh-CN" ? "用户笔记基线" : "Self-Notes") : modeLabel}
+          </Badge>
           <Button onClick={() => setGuideOpen(true)} variant="outline" className="h-9 gap-2 border-primary/30 bg-white font-medium text-primary hover:bg-primary/5">
             <Question size={16} />
             {locale === "zh-CN" ? "浮窗解释模式" : "Guided Tour Overlay"}
@@ -598,7 +608,41 @@ export function RmwCheckpoint({
         </div>
       </header>
 
-      {mode === "live" ? <>
+      {condition === "rmw_no_summary" ? <section data-tour="checkpoint-self-notes-baseline" className="rounded-2xl border bg-white px-8 py-16 text-center shadow-[0_12px_40px_rgba(35,43,70,.05)]">
+        <div className="mx-auto grid size-14 place-items-center rounded-2xl bg-amber-50 text-amber-800">
+          <Brain size={30} className="text-amber-800" />
+        </div>
+        <Badge variant="secondary" className="mt-4">{locale === "zh-CN" ? "方式二 · 用户自主笔记基线" : "Method 2 · Self-Notes Baseline"}</Badge>
+        <h2 className="mt-4 text-xl font-semibold">
+          {locale === "zh-CN" ? "工作区记录已保存 · 准备进入中断任务" : "Workspace notes saved · Ready for interruption"}
+        </h2>
+        <p className="mx-auto mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
+          {locale === "zh-CN"
+            ? "你的工作区 memo 与对话记录已成功保存。本组别（方式二：用户自主笔记基线）不提供 AI 推理卡片与网络生成，请凭借你在工作区中记录的笔记继续恢复研究。"
+            : "Your workspace memo and chat history have been saved. Method 2 (Self-Notes Baseline) provides no AI reasoning cards or network diagram; proceed using your own workspace notes."}
+        </p>
+      </section> : condition === "summary_only" ? <section data-tour="checkpoint-summary-baseline" className="rounded-2xl border bg-white px-8 py-16 text-center shadow-[0_12px_40px_rgba(35,43,70,.05)]">
+        <div className="mx-auto grid size-14 place-items-center rounded-2xl bg-indigo-50 text-primary">
+          <Brain size={30} className={mode === "loading" ? "animate-pulse text-indigo-600" : "text-indigo-600"} />
+        </div>
+        <Badge variant="secondary" className="mt-4">{locale === "zh-CN" ? "方式三 · 纯 AI 恢复摘要基线" : "Method 3 · Pure AI Summary Baseline"}</Badge>
+        <h2 className="mt-4 text-xl font-semibold">
+          {mode === "loading"
+            ? (locale === "zh-CN" ? "后台自动提取 Problem State 中……" : "Auto-extracting problem state in background…")
+            : mode === "live"
+              ? (locale === "zh-CN" ? "后台保存完成 · 准备进入中断任务" : "Background extraction complete · Ready for interruption")
+              : (locale === "zh-CN" ? "后台提取状态" : "Background extraction status")}
+        </h2>
+        <p className="mx-auto mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
+          {mode === "loading"
+            ? emptyMessage
+            : mode === "live"
+              ? (locale === "zh-CN"
+                ? "系统已在后台自动归纳你的研究推理状态，该状态将用于中断后的 AI 摘要生成。为了防止中断前的卡片预演（Cards Rehearsal Effect）干扰实验基线，在此步骤无需进行人工卡片查看或校准。"
+                : "Your reasoning state has been summarized in the background and will be used for post-interruption AI summary generation. In Method 3 (Pure AI Summary Baseline), pre-interruption card review and calibration are omitted to prevent rehearsal confounding.")
+              : emptyMessage}
+        </p>
+      </section> : mode === "live" ? <>
       <section className="grid grid-cols-[1fr_1.25fr] gap-5">
         <article data-tour="checkpoint-goals" className="rounded-2xl border bg-white p-5 shadow-[0_12px_40px_rgba(35,43,70,.05)]">
           <div className="mb-3 flex items-center justify-between"><h2 className="font-semibold">{t.main}</h2><Badge variant="outline"><Target size={13} />1</Badge></div>

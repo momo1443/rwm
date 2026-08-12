@@ -80,8 +80,8 @@ const conditionLabels: Record<string, string> = {
 };
 const activeConditionDefinitions = [
   { id: "rmw", label: "方式一", description: "完整 RMW：AI 恢复摘要、推理卡片与知识网络。" },
-  { id: "rmw_no_summary", label: "方式二", description: "RMW 无 AI 摘要：仅提供推理卡片与知识网络。" },
-  { id: "summary_only", label: "方式三", description: "仅提供 AI 恢复摘要，不提供推理卡片或知识网络。" },
+  { id: "rmw_no_summary", label: "方式二", description: "用户自主笔记基线：无 AI 恢复摘要、推理卡片或知识网络，恢复仅依托被试手写工作区笔记。" },
+  { id: "summary_only", label: "方式三", description: "纯 AI 恢复摘要基线：中断前后台静默生成 Problem State（无卡片展示与校准预演），中断后仅提供 AI 恢复摘要。" },
 ] as const;
 const exclusionReasons = ["研究者测试", "自动化或非真实被试", "未完成实验", "技术故障", "重复记录", "不符合纳入标准", "被试要求撤回", "其他"];
 
