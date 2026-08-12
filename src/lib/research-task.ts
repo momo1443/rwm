@@ -239,3 +239,19 @@ export function getTaskMaterials(taskId: ResearchTaskId, phase: "work" | "recove
   const task = getResearchTask(taskId);
   return phase === "recovery" ? [...task.materials, task.recoveryMaterial] : task.materials;
 }
+
+export function researchTaskMetadata(taskId: string) {
+  if (!isResearchTaskId(taskId)) return {
+    label: taskId === "waste" ? "旧版垃圾分类任务" : taskId,
+    initialMaterialCount: 5,
+    firstMaterialId: "b1",
+    recoveryMaterialId: null,
+  };
+  const task = getResearchTask(taskId);
+  return {
+    label: task.label["zh-CN"],
+    initialMaterialCount: task.materials.length,
+    firstMaterialId: task.materials[0].id,
+    recoveryMaterialId: task.recoveryMaterial.id,
+  };
+}

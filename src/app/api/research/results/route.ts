@@ -5,6 +5,7 @@ import { deleteParticipant, readAllResults, resultStorageMode, reviewBlindOutcom
 import { chatCounts, interruptionMetrics, taskMilestones } from "@/lib/admin-result-metrics";
 import { ADMIN_COOKIE, getResearcherAuthConfig } from "@/lib/results-server";
 import { verifySignedToken } from "@/lib/signed-token";
+import { getResearchTask, isResearchTaskId, researchTaskMetadata } from "@/lib/research-task";
 
 async function isAuthorized(request: NextRequest) {
   const config = getResearcherAuthConfig();
@@ -57,6 +58,9 @@ export async function GET(request: NextRequest) {
         .map((result) => ({
           blind_id: blindIdFor(result.session_id),
           locale: result.locale,
+          task_id: result.task_id,
+          task_label: researchTaskMetadata(result.task_id).label,
+          task_question: isResearchTaskId(result.task_id) ? getResearchTask(result.task_id).question[result.locale === "en" ? "en" : "zh-CN"] : "旧版垃圾分类研究任务",
           phase_one_memo: result.phase_one_memo,
           final_memo: result.memo,
           blind_review_scores: result.blind_review_scores,
@@ -64,7 +68,7 @@ export async function GET(request: NextRequest) {
           blind_reviewed_at: result.blind_reviewed_at,
         }))
         .sort((left, right) => left.blind_id.localeCompare(right.blind_id));
-      return NextResponse.json({ mode: resultStorageMode(), rubricVersion: "recovery-outcome-v1", results: eligible });
+      return NextResponse.json({ mode: resultStorageMode(), rubricVersion: "recovery-outcome-v2-task-context", results: eligible });
     }
     const exportMode = request.nextUrl.searchParams.get("export");
     if (exportMode === "1" || exportMode === "analysis") {
@@ -73,7 +77,7 @@ export async function GET(request: NextRequest) {
         : database.results;
       const sessionIds = new Set(results.map((result) => result.session_id));
       return NextResponse.json({
-        schemaVersion: "rmw-research-results-v7",
+        schemaVersion: "rmw-research-results-v8",
         storageMode: resultStorageMode(),
         exportedAt: new Date().toISOString(),
         exportMode: exportMode === "analysis" ? "analysis-ready" : "all-raw",
@@ -105,7 +109,8 @@ export async function GET(request: NextRequest) {
         const interruption = interruptionMetrics(sessionEvents);
         const conversation = chatCounts(Array.isArray(result.chat) ? result.chat as Array<{ role: "user" | "assistant"; text: string }> : null);
         const milestones = taskMilestones(sessionEvents, result.status);
-        const materialCompletionIds = new Set(sessionEvents.filter((event) => event.event_type === "material_exposure_completed").map((event) => event.target_id).filter(Boolean));
+        const taskMetadata = researchTaskMetadata(result.task_id);
+        const phaseOneMaterialCompletionIds = new Set(sessionEvents.filter((event) => event.event_type === "material_exposure_completed" && event.stage === "research_work").map((event) => event.target_id).filter(Boolean));
         const recoveryTabs = [...new Set(sessionEvents.filter((event) => event.event_type === "recovery_tab_viewed").map((event) => event.target_id).filter((value): value is string => Boolean(value)))];
         return {
         session_id: result.session_id,
@@ -139,8 +144,11 @@ export async function GET(request: NextRequest) {
         color_attempts: interruption.color.attempts,
         event_count: sessionEvents.length,
         event_sequence_complete: sessionEvents.length > 0 && sessionEvents.every((event, index) => event.sequence_number === index + 1),
-        initial_material_presented: sessionEvents.some((event) => event.event_type === "material_presented" && event.target_id === "b1"),
-        material_completion_count: materialCompletionIds.size,
+        initial_material_presented: sessionEvents.some((event) => event.event_type === "material_presented" && event.stage === "research_work" && event.target_id === taskMetadata.firstMaterialId),
+        initial_material_id: taskMetadata.firstMaterialId,
+        expected_material_count: taskMetadata.initialMaterialCount,
+        material_completion_count: phaseOneMaterialCompletionIds.size,
+        recovery_new_material_exposed: taskMetadata.recoveryMaterialId === null ? null : sessionEvents.some((event) => event.event_type === "material_exposure_completed" && event.stage === "recovery" && event.target_id === taskMetadata.recoveryMaterialId),
         recovery_rendered: sessionEvents.some((event) => event.event_type === "recovery_support_rendered"),
         recovery_tabs: recoveryTabs,
       };})
