@@ -54,14 +54,16 @@ export type TaskMilestone = { label: string; complete: boolean; evidence: string
 export function taskMilestones(events: AdminMetricEvent[], status: "started" | "completed"): TaskMilestone[] {
   const has = (...types: string[]) => events.some((event) => types.includes(event.event_type));
   const materialIds = new Set(events
-    .filter((event) => event.event_type === "material_exposure_completed")
+    .filter((event) => event.event_type === "material_exposure_completed" && event.stage === "research_work")
     .map((event) => event.target_id)
     .filter(Boolean));
+  const taskId = events.find((event) => typeof event.payload?.taskId === "string")?.payload?.taskId;
+  const expectedMaterials = taskId === "city_policy" ? 5 : taskId === "ai_course_policy" || taskId === "night_transit" ? 6 : 5;
   return [
     { label: "同意并建立运行", complete: has("consent_submitted"), evidence: "consent_submitted" },
     { label: "完成前测", complete: has("pre_survey_completed"), evidence: "pre_survey_completed" },
     { label: "确认任务说明", complete: has("task_brief_confirmed"), evidence: "task_brief_confirmed" },
-    { label: "完成五份材料最低暴露", complete: materialIds.size >= 5, evidence: `${materialIds.size}/5 materials` },
+    { label: "完成第一阶段材料最低暴露", complete: materialIds.size >= expectedMaterials, evidence: `${materialIds.size}/${expectedMaterials} materials` },
     { label: "结束第一阶段工作", complete: has("phase_one_checkpoint_requested", "phase_one_control_completed"), evidence: "phase-one exit" },
     { label: "完成中断任务", complete: has("interruption_completed"), evidence: "interruption_completed" },
     { label: "提交无辅助回忆", complete: has("unsupported_recall_submitted"), evidence: "unsupported_recall_submitted" },

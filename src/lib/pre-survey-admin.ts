@@ -36,9 +36,9 @@ export const surveyItems: SurveyItemMeta[] = [
   { id: "research_self_efficacy_2", group: "研究基线", subscale: "研究任务自我效能", label: "比较不同问题框架的信心", anchors: confidence },
   { id: "research_self_efficacy_3", group: "研究基线", subscale: "研究任务自我效能", label: "提出假设并指出不确定性的信心", anchors: confidence },
   { id: "research_self_efficacy_4", group: "研究基线", subscale: "研究任务自我效能", label: "设计可行验证方案的信心", anchors: confidence },
-  { id: "topic_familiarity_1", group: "研究基线", subscale: "议题先验熟悉度", label: "熟悉垃圾分类治理议题", anchors: familiarity },
+  { id: "topic_familiarity_1", group: "研究基线", subscale: "议题先验熟悉度", label: "熟悉所分配研究任务的议题", anchors: familiarity },
   { id: "topic_familiarity_2", group: "研究基线", subscale: "议题先验熟悉度", label: "读过或讨论过相关案例", anchors: familiarity },
-  { id: "topic_familiarity_3", group: "研究基线", subscale: "议题先验熟悉度", label: "能解释垃圾分类治理基本流程", anchors: familiarity },
+  { id: "topic_familiarity_3", group: "研究基线", subscale: "议题先验熟悉度", label: "能解释所分配议题的基本问题", anchors: familiarity },
 ];
 
 export const scoredSubscales = ["认知", "使用", "评价", "伦理", "研究任务自我效能", "议题先验熟悉度"] as const;

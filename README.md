@@ -1,6 +1,6 @@
 # RMW — Reasoning Memory Workspace
 
-A bilingual-interface, interruption-resilient research workspace for the CHI 2027 RMW study. Every participant completes the same urban waste-sorting governance task, reads five validated Chinese experimental materials, collaborates with an evidence-grounded AI tutor, drafts a 600–900 Chinese-character memo, and recovers their reasoning after interruption.
+A bilingual-interface, interruption-resilient research workspace for the CHI 2027 RMW study. Participants complete one of three research tasks—multi-criteria policy choice, evidence synthesis about generative AI in university courses, or campus night-transport design—collaborate with an evidence-grounded AI tutor, draft a 600–900 Chinese-character memo, and recover their reasoning after interruption.
 
 ## Run locally
 
@@ -15,8 +15,11 @@ Open `http://localhost:3000`. Useful review routes:
 - `/?condition=rmw` — full RMW with recovery brief, reasoning cards, and network
 - `/?condition=rmw_no_summary` — RMW cards and network without the AI recovery summary
 - `/?condition=summary_only` — AI recovery summary only
+- `/?task=city_policy` — multi-criteria city-policy decision
+- `/?task=ai_course_policy` — evidence synthesis about generative AI in university courses
+- `/?task=night_transit` — campus night-transport planning under constraints
 - `/?view=task` — Phase 1 and final memo requirements
-- `/?view=work` — Phase 1 waste-sorting workspace
+- `/?view=work` — Phase 1 workspace for the selected task
 - `/?view=checkpoint` — one-minute RMW save window with an extracted problem state and knowledge network
 - `/?view=interruption` — letter 2-back and color-recognition interruption tasks
 - `/?view=recovery` — RMW recovery workspace
@@ -45,7 +48,7 @@ The participant does not choose the model. The server uses `DEEPSEEK_MODEL`, fal
 
 ## Experimental-task controls
 
-- Participant-facing code uses one research question and five waste-sorting passages. Researcher-only design annotations are intentionally excluded.
+- Participant-facing code uses three task-specific evidence packs. A task-specific new source or constraint is revealed only after the interruption.
 - The English interface does not translate the validated Chinese stimulus paragraphs; an unpiloted translation must not become another task condition.
 - The pre-task page measures AI use/evaluation, research-task self-efficacy, and prior topic familiarity with multiple 5-point items. These task-specific adaptations must be piloted and reported as adapted measures.
 

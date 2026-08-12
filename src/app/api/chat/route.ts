@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getResearchTask } from "@/lib/research-task";
+import { getResearchTask, getTaskMaterials, researchTaskIds } from "@/lib/research-task";
 
 const bodySchema = z.object({
   messages: z.array(z.object({ role: z.enum(["user","assistant"]), content: z.string().min(1).max(8000) })).min(1).max(60),
   locale: z.enum(["zh-CN","en"]).default("zh-CN"),
-  taskId: z.literal("waste").default("waste"),
+  taskId: z.enum(researchTaskIds).default("city_policy"),
+  phase: z.enum(["work", "recovery"]).default("work"),
 });
 
 const completionSchema=z.object({
@@ -17,9 +18,10 @@ const completionSchema=z.object({
 export async function POST(request: Request) {
   const parsed = bodySchema.safeParse(await request.json());
   if (!parsed.success) return NextResponse.json({ error: "Invalid chat request" }, { status: 400 });
-  const {locale,taskId}=parsed.data;
+  const {locale,taskId,phase}=parsed.data;
   const task=getResearchTask(taskId);
-  const evidencePack=task.materials.map(material=>`[${locale==="zh-CN"?"材料":"Material"} ${material.code}] ${material.excerpt[locale]}`).join("\n\n");
+  const materials=getTaskMaterials(taskId,phase);
+  const evidencePack=materials.map(material=>`[${locale==="zh-CN"?"材料":"Material"} ${material.code}] ${material.excerpt[locale]}`).join("\n\n");
   const systemPrompt=locale==="zh-CN"
     ?`你是研究任务中的 AI 助手。学生正在研究：${task.question["zh-CN"]}
 
@@ -31,7 +33,7 @@ export async function POST(request: Request) {
 
 当回答涉及材料中的具体事实或重要判断时，用 [材料 ${task.code}1] 这样的编号标明依据。材料没有支持的内容要明确说是推测或尚不确定，但不必给每句话贴标签。不要引入材料之外的事实，不设定唯一正确框架，也不要替学生直接写完整最终 memo。你的目标是帮助学生把自己的问题想清楚，而不是代替他完成任务。
 
-五段研究材料：
+当前阶段可见的 ${materials.length} 份研究材料：
 ${evidencePack}`
     :`You are the AI assistant in a research task. The student is investigating: ${task.question.en}
 
@@ -43,7 +45,7 @@ Use one to three short paragraphs in ordinary conversation. Use bullets or numbe
 
 When citing a concrete fact or consequential claim from the materials, include a backlink such as [Material ${task.code}1]. Say naturally when something is an inference or remains uncertain, without labeling every sentence. Do not introduce facts outside the evidence pack, assume a single correct framing, or write the student's complete final memo. Help the student clarify their own reasoning rather than completing the task for them.
 
-Evidence pack:
+Evidence pack (${materials.length} currently visible sources):
 ${evidencePack}`;
   const baseUrl = process.env.DEEPSEEK_BASE_URL || process.env.LLM_BASE_URL || "https://api.deepseek.com";
   const apiKey = process.env.DEEPSEEK_API_KEY || process.env.LLM_API_KEY;
@@ -52,7 +54,7 @@ ${evidencePack}`;
     return NextResponse.json({
       mode: "unavailable",
       error: locale === "zh-CN" ? "DeepSeek 尚未配置" : "DeepSeek is not configured",
-      promptVersion: "single_waste_task_v5_constructive_challenge",
+      promptVersion: "three_tasks_v1_phase_bounded_evidence",
     }, { status: 503 });
   }
   try{
@@ -73,7 +75,7 @@ ${evidencePack}`;
     if(!completion.success||!completion.data.choices[0].message.content){
       return NextResponse.json({error:"Invalid DeepSeek response"},{status:502});
     }
-    return NextResponse.json({ mode:"live", provider:"deepseek", model, promptVersion:"single_waste_task_v5_constructive_challenge", content:completion.data.choices[0].message.content });
+    return NextResponse.json({ mode:"live", provider:"deepseek", model, promptVersion:"three_tasks_v1_phase_bounded_evidence", content:completion.data.choices[0].message.content });
   }catch(error){
     const timedOut=error instanceof DOMException&&error.name==="TimeoutError";
     return NextResponse.json({error:timedOut?"DeepSeek request timed out":"DeepSeek request failed"},{status:502});

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createParticipant, findSession, resultStorageMode, saveResultEvent, updateParticipant } from "@/lib/result-store";
 import { getParticipantSessionSecret } from "@/lib/results-server";
 import { createSignedToken, verifySignedToken } from "@/lib/signed-token";
+import { researchTaskIds } from "@/lib/research-task";
 
 const participantCodeSchema = z.string().regex(/^RMW-[A-F0-9]{8}$/);
 const sessionIdSchema = z.string().uuid();
@@ -36,7 +37,7 @@ const requestSchema = z.discriminatedUnion("action", [
     participantCode: participantCodeSchema,
     locale: z.enum(["zh-CN", "en"]),
     condition: z.enum(["rmw", "rmw_no_summary", "summary_only"]),
-    taskId: z.literal("waste"),
+    taskId: z.enum(researchTaskIds),
     token: z.string().min(1).max(2000).optional(),
   }),
   z.object({ action: z.literal("event"), token: z.string().min(1).max(2000), event: eventSchema }),

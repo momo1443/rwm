@@ -26,9 +26,10 @@ import {
   toReasoningCards,
 } from "@/lib/problem-state";
 import {
+  getTaskMaterials,
   getResearchTask,
-  phaseOneGoals,
-  taskOverview,
+  isResearchTaskId,
+  researchTasks,
   type ResearchTaskId,
 } from "@/lib/research-task";
 import type { CardRelation, Condition, EpistemicStatus, Locale, ProblemStateSnapshot, ReasoningCard } from "@/lib/rmw-types";
@@ -92,9 +93,9 @@ export function RmwApp() {
   const [locale, setLocale] = useState<Locale>("zh-CN");
   const [screen, setScreen] = useState<Screen>("landing");
   const [condition, setCondition] = useState<Condition>("rmw");
-  const taskId: ResearchTaskId = "waste";
-  const [memo, setMemo] = useState(() => getResearchTask("waste").starterMemo["zh-CN"]);
-  const [chat, setChat] = useState<ChatMessage[]>(() => [{ role: "assistant", text: getResearchTask("waste").assistantIntro["zh-CN"] }]);
+  const [taskId, setTaskId] = useState<ResearchTaskId>("city_policy");
+  const [memo, setMemo] = useState(() => getResearchTask("city_policy").starterMemo["zh-CN"]);
+  const [chat, setChat] = useState<ChatMessage[]>(() => [{ role: "assistant", text: getResearchTask("city_policy").assistantIntro["zh-CN"] }]);
   const [testMode, setTestMode] = useState(false);
   const [participantId, setParticipantId] = useState("");
   const [startError, setStartError] = useState("");
@@ -106,12 +107,20 @@ export function RmwApp() {
     const params = new URLSearchParams(window.location.search);
     const view = params.get("view");
     const c = params.get("condition") as Condition | null;
+    const task = params.get("task");
     const lang = params.get("lang") as Locale | null;
     const frame = requestAnimationFrame(() => {
       setParticipantId(getOrCreateParticipantId());
       setTestMode(params.get("test") === "1");
       if (lang === "en" || lang === "zh-CN") setLocale(lang);
       if (c && ["rmw", "rmw_no_summary", "summary_only"].includes(c)) setCondition(c);
+      if (isResearchTaskId(task)) {
+        const selectedTask=getResearchTask(task);
+        const selectedLocale=lang==="en"||lang==="zh-CN"?lang:"zh-CN";
+        setTaskId(task);
+        setMemo(selectedTask.starterMemo[selectedLocale]);
+        setChat([{role:"assistant",text:selectedTask.assistantIntro[selectedLocale]}]);
+      }
       if (view === "checkpoint") setScreen("checkpoint");
       if (view === "interruption") setScreen("interruption");
       if (view === "recovery") setScreen("workspace");
@@ -134,11 +143,11 @@ export function RmwApp() {
         <div className="max-w-md"><SquaresFour size={42} className="mx-auto mb-5 text-primary" /><h1 className="text-2xl font-semibold">{t.desktop}</h1><p className="mt-3 text-muted-foreground">{t.desktopText}</p></div>
       </div>
       <main className="desktop-app min-h-screen">
-        {screen === "landing" && <Landing locale={locale} setLocale={setLocale} participantId={participantId} condition={condition} setCondition={setCondition} startError={startError} onStart={async () => {
-          const task = getResearchTask("waste");
+        {screen === "landing" && <Landing locale={locale} setLocale={setLocale} participantId={participantId} condition={condition} setCondition={setCondition} taskId={taskId} setTaskId={setTaskId} startError={startError} onStart={async () => {
+          const task = getResearchTask(taskId);
           setStartError("");
           const sessionId = beginStudySession();
-          const started = await startRemoteStudySession({ sessionId, participantCode: participantId, locale, condition, taskId: "waste" });
+          const started = await startRemoteStudySession({ sessionId, participantCode: participantId, locale, condition, taskId });
           if (!started) {
             setStartError(locale === "zh-CN" ? "无法创建本次运行，请检查网络后重试。" : "Could not create this study run. Check your connection and try again.");
             return;
@@ -149,7 +158,7 @@ export function RmwApp() {
           setChat([{ role: "assistant", text: task.assistantIntro[locale] }]);
           setProblemState(null);
           saveProblemStateSnapshot(null);
-          eventLog("research_task_started", { taskId: "waste", assignment: "selected_condition", participantId, condition }, { stage: "task_setup" });
+          eventLog("research_task_started", { taskId, assignment: "selected_task_and_condition", participantId, condition }, { stage: "task_setup" });
           setScreen("brief");
         }} t={t} />}
         {screen === "brief" && <TaskBrief locale={locale} taskId={taskId} setScreen={setScreen} />}
@@ -181,6 +190,8 @@ function Landing({
   participantId,
   condition,
   setCondition,
+  taskId,
+  setTaskId,
   startError,
   onStart,
   t,
@@ -190,6 +201,8 @@ function Landing({
   participantId: string;
   condition: Condition;
   setCondition: (condition: Condition) => void;
+  taskId: ResearchTaskId;
+  setTaskId: (taskId: ResearchTaskId) => void;
   startError: string;
   onStart: () => Promise<void>;
   t: typeof copy[Locale];
@@ -203,6 +216,16 @@ function Landing({
         <label className="text-sm font-semibold" htmlFor="anonymous-id">{t.anonymous}</label>
         <div id="anonymous-id" className="mt-3 rounded-xl border bg-muted/35 px-4 py-3 font-mono text-base font-semibold tracking-wider text-primary">{participantId || (locale==="zh-CN"?"正在生成…":"Generating…")}</div>
         <p className="mt-2 text-xs text-muted-foreground">{locale==="zh-CN"?"编号由系统自动生成，无需填写。":"Generated automatically; no entry is required."}</p>
+        <fieldset className="mt-7">
+          <legend className="text-sm font-semibold">{locale==="zh-CN"?"选择研究任务":"Choose a research task"}</legend>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">{locale==="zh-CN"?"正式实验可由系统随机分配；此处保留选择功能用于研究者测试。":"Formal studies can assign this randomly; selection remains available for researcher testing."}</p>
+          <div className="mt-3 grid gap-2">
+            {researchTasks.map(task=><label key={task.id} className={`cursor-pointer rounded-xl border px-3 py-3 text-sm transition ${taskId===task.id?"border-primary bg-secondary/65 text-primary":"bg-white hover:border-primary/45"}`}>
+              <input type="radio" name="task" value={task.id} checked={taskId===task.id} onChange={()=>setTaskId(task.id)} className="mr-2 accent-[var(--primary)]"/>
+              <span className="font-medium">{task.label[locale]}</span><span className="ml-2 text-xs text-muted-foreground">{task.eyebrow[locale]}</span>
+            </label>)}
+          </div>
+        </fieldset>
         <fieldset className="mt-7">
           <legend className="text-sm font-semibold">{locale==="zh-CN"?"选择测试方式":"Choose a test condition"}</legend>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">{locale==="zh-CN"?"此选项用于研究者测试。正式实验建议由系统随机分组。":"For researcher testing. Formal studies should assign conditions randomly."}</p>
@@ -231,10 +254,10 @@ function TaskBrief({locale,taskId,setScreen}:{locale:Locale;taskId:ResearchTaskI
   return <CenteredShell title={locale==="zh-CN"?"研究任务说明":"Research task brief"}>
     <Badge variant="secondary" className="rounded-full text-primary">{task.label[locale]}</Badge>
     <p className="mt-5 text-lg font-semibold leading-8">{task.question[locale]}</p>
-    <p className="mt-4 rounded-xl bg-secondary/55 p-4 text-sm leading-7 text-secondary-foreground">{taskOverview[locale]}</p>
+    <p className="mt-4 rounded-xl bg-secondary/55 p-4 text-sm leading-7 text-secondary-foreground">{task.overview[locale]}</p>
     <div className="mt-6">
       <h2 className="text-sm font-semibold">{locale==="zh-CN"?"第一阶段包含 3 个目标，每个目标有多个评价点：":"Phase 1 contains three goals, each with multiple evaluation criteria:"}</h2>
-      <div className="mt-3 space-y-3">{phaseOneGoals.map((goal,index)=><section key={goal.id} className="rounded-xl border bg-white p-4">
+      <div className="mt-3 space-y-3">{task.phaseOneGoals.map((goal,index)=><section key={goal.id} className="rounded-xl border bg-white p-4">
         <div className="flex items-center gap-3"><span className="grid size-7 shrink-0 place-items-center rounded-full bg-secondary text-xs font-semibold text-primary">{index+1}</span><h3 className="text-sm font-semibold">{goal.title[locale]}</h3></div>
         <ul className="ml-10 mt-3 space-y-2 text-xs leading-5 text-muted-foreground">{goal.criteria.map(criterion=><li key={criterion[locale]} className="flex gap-2"><span className="mt-2 size-1.5 shrink-0 rounded-full bg-primary/55"/><span>{criterion[locale]}</span></li>)}</ul>
       </section>)}</div>
@@ -264,6 +287,7 @@ type SurveyGroup = {
 };
 
 function Survey({ locale, taskId, setScreen, t }: { locale:Locale;taskId:ResearchTaskId;setScreen:(s:Screen)=>void;t:typeof copy[Locale] }) {
+  const task=getResearchTask(taskId);
   const agreementZh=["非常不同意","不同意","一般","同意","非常同意"];
   const confidenceZh=["完全没信心","较没信心","一般","较有信心","非常有信心"];
   const familiarityZh=["完全不符合","较不符合","一般","较符合","非常符合"];
@@ -321,9 +345,9 @@ function Survey({ locale, taskId, setScreen, t }: { locale:Locale;taskId:Researc
         {id:"research_self_efficacy_2",subscale:"研究任务自我效能",text:"我有信心比较至少两个不同的问题框架。",anchors:confidenceZh},
         {id:"research_self_efficacy_3",subscale:"研究任务自我效能",text:"我有信心提出可验证的假设，并指出仍不确定之处。",anchors:confidenceZh},
         {id:"research_self_efficacy_4",subscale:"研究任务自我效能",text:"我有信心在现实约束下设计可行的验证方案。",anchors:confidenceZh},
-        {id:"topic_familiarity_1",subscale:"议题先验熟悉度",text:"我熟悉城市生活垃圾分类治理这一议题。",anchors:familiarityZh},
-        {id:"topic_familiarity_2",subscale:"议题先验熟悉度",text:"我曾阅读或讨论过垃圾分类治理的相关案例。",anchors:familiarityZh},
-        {id:"topic_familiarity_3",subscale:"议题先验熟悉度",text:"即使不看额外资料，我也能解释垃圾分类治理的基本流程。",anchors:familiarityZh},
+        {id:"topic_familiarity_1",subscale:"议题先验熟悉度",text:`我熟悉${task.familiarity[locale]}。`,anchors:familiarityZh},
+        {id:"topic_familiarity_2",subscale:"议题先验熟悉度",text:`我曾阅读或讨论过${task.familiarity[locale]}的相关案例。`,anchors:familiarityZh},
+        {id:"topic_familiarity_3",subscale:"议题先验熟悉度",text:`即使不看额外资料，我也能解释${task.familiarity[locale]}的基本问题。`,anchors:familiarityZh},
       ],
     },
   ] : [
@@ -376,9 +400,9 @@ function Survey({ locale, taskId, setScreen, t }: { locale:Locale;taskId:Researc
         {id:"research_self_efficacy_2",subscale:"Research-task self-efficacy",text:"I am confident that I can compare at least two different problem framings.",anchors:confidenceEn},
         {id:"research_self_efficacy_3",subscale:"Research-task self-efficacy",text:"I am confident that I can form testable hypotheses and identify what remains uncertain.",anchors:confidenceEn},
         {id:"research_self_efficacy_4",subscale:"Research-task self-efficacy",text:"I am confident that I can design a feasible test under real-world constraints.",anchors:confidenceEn},
-        {id:"topic_familiarity_1",subscale:"Prior topic familiarity",text:"I am familiar with urban household waste-sorting governance.",anchors:familiarityEn},
-        {id:"topic_familiarity_2",subscale:"Prior topic familiarity",text:"I have read or discussed cases related to waste-sorting governance.",anchors:familiarityEn},
-        {id:"topic_familiarity_3",subscale:"Prior topic familiarity",text:"Without extra materials, I can explain the basic process of waste-sorting governance.",anchors:familiarityEn},
+        {id:"topic_familiarity_1",subscale:"Prior topic familiarity",text:`I am familiar with ${task.familiarity.en}.`,anchors:familiarityEn},
+        {id:"topic_familiarity_2",subscale:"Prior topic familiarity",text:`I have read or discussed cases involving ${task.familiarity.en}.`,anchors:familiarityEn},
+        {id:"topic_familiarity_3",subscale:"Prior topic familiarity",text:`Without extra materials, I can explain the basic issues in ${task.familiarity.en}.`,anchors:familiarityEn},
       ],
     },
   ];
@@ -546,12 +570,12 @@ function RecoveryAcceptFloat({
 
 function WorkspaceTour({locale,onComplete}:{locale:Locale;onComplete:()=>void}) {
   const steps=locale==="zh-CN"?[
-    {target:"materials",title:"先阅读实验材料",body:"这里有 5 段关于垃圾分类治理的材料。点击不同材料查看全文，系统会记录阅读进度。"},
+    {target:"materials",title:"先阅读实验材料",body:"这里是当前任务的证据与约束材料。点击不同材料查看全文，系统会记录阅读进度。"},
     {target:"memo",title:"在工作区记录思考",body:"中间的工作区用于写下候选框架、假设、不确定点、排除方向和下一步。内容会持续保存；拖动两侧的竖向分隔条可调整各列宽度。"},
     {target:"goals",title:"检查右上角目标",body:"右上角用于逐项核对第一阶段目标。目标内容可独立上下滚动。"},
     {target:"chat",title:"与 AI 比较问题框架",body:"右下角是 AI 助手。请要求它引用材料编号，并区分材料证据、推断和仍需验证的假设。拖动右侧中间的分隔条，可以上下调整两个窗口的高度。"},
   ]:[
-    {target:"materials",title:"Read the evidence first",body:"Five materials describe the waste-sorting case. Open each one to read the full text; reading progress is recorded."},
+    {target:"materials",title:"Read the evidence first",body:"These sources describe the current task evidence and constraints. Open each one to read it; reading progress is recorded."},
     {target:"memo",title:"Record reasoning in the workspace",body:"Use the central workspace for candidate framings, hypotheses, uncertainties, rejected directions, and your next step. Its content is continuously saved; drag either vertical divider to resize the columns."},
     {target:"goals",title:"Check the upper-right goals",body:"Use the upper-right window to check Phase 1 requirements. Its content scrolls independently."},
     {target:"chat",title:"Compare framings with AI",body:"The AI assistant is in the lower-right window. Ask it to cite material numbers and separate evidence, inference, and unverified assumptions. Drag the divider to resize the two right-hand windows."},
@@ -739,6 +763,7 @@ function Workspace({
         body:JSON.stringify({
           locale,
           taskId,
+          phase,
           messages:history.map(item=>({role:item.role,content:item.text})),
         }),
       });
@@ -822,8 +847,8 @@ function Workspace({
 
 function MaterialsPanel({locale,taskId,phase,t}:{locale:Locale;taskId:ResearchTaskId;phase:"work"|"recovery";t:typeof copy[Locale]}) {
   const task=getResearchTask(taskId);
-  const materials=task.materials;
-  const [active,setActive]=useState(materials[0].id);
+  const materials=getTaskMaterials(taskId,phase);
+  const [active,setActive]=useState(()=>phase==="recovery"?task.recoveryMaterial.id:materials[0].id);
   const [read,setRead]=useState<Set<string>>(()=>new Set());
   const presentedRef=useRef(new Set<string>());
   const completedRef=useRef(new Set<string>());
@@ -847,9 +872,9 @@ function MaterialsPanel({locale,taskId,phase,t}:{locale:Locale;taskId:ResearchTa
     eventLog("material_opened",{id,taskId,phase},{stage,targetType:"material",targetId:id});
   };
   return <aside data-tour="materials" className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-[#fbfaf7]">
-    <div className="flex h-14 shrink-0 items-center justify-between border-b px-5"><h2 className="flex items-center gap-2 font-semibold"><BookOpenText size={20}/>{t.materials}</h2><Badge variant="outline" className="text-[10px]">5 passages</Badge></div>
+    <div className="flex h-14 shrink-0 items-center justify-between border-b px-5"><h2 className="flex items-center gap-2 font-semibold"><BookOpenText size={20}/>{t.materials}</h2><Badge variant="outline" className="text-[10px]">{materials.length} {locale==="zh-CN"?"份材料":"sources"}</Badge></div>
     <div className="shrink-0 px-5 py-4"><div className="mb-2 flex justify-between text-xs text-muted-foreground"><span>{t.progress}</span><span>{read.size} / {materials.length}</span></div><Progress value={(read.size/materials.length)*100} className="h-1.5"/></div>
-    <div className="panel-scroll min-h-0 flex-1 overflow-y-auto px-3 pb-4">{materials.map(material=><button key={material.id} onClick={()=>openMaterial(material.id)} className={`mb-2 w-full rounded-xl px-3 py-4 text-left transition ${active===material.id?"bg-white shadow-[0_5px_18px_rgba(35,43,70,.07)] ring-1 ring-primary/15":"hover:bg-white/80"}`}><div className="mb-2 flex items-center justify-between"><span className="grid size-6 place-items-center rounded-md bg-secondary text-xs font-semibold text-primary">{material.n}</span>{read.has(material.id)&&<span className="flex items-center gap-1 text-[10px] text-[var(--active)]"><Check size={12}/>{locale==="zh-CN"?"已阅读":"Read"}</span>}</div><h3 className="text-sm font-semibold leading-5">{material.title[locale]}</h3><p className={`mt-2 whitespace-pre-line text-xs leading-5 text-muted-foreground ${active===material.id?"":"line-clamp-3"}`}>{material.excerpt[locale]}</p><p className="mt-3 text-[10px] text-primary">{material.meta[locale]}</p></button>)}</div>
+    <div className="panel-scroll min-h-0 flex-1 overflow-y-auto px-3 pb-4">{materials.map(material=><button key={material.id} onClick={()=>openMaterial(material.id)} className={`mb-2 w-full rounded-xl px-3 py-4 text-left transition ${material.recoveryOnly?"border border-amber-200 bg-amber-50/55":""} ${active===material.id?"bg-white shadow-[0_5px_18px_rgba(35,43,70,.07)] ring-1 ring-primary/15":"hover:bg-white/80"}`}><div className="mb-2 flex items-center justify-between"><span className="grid size-6 place-items-center rounded-md bg-secondary text-xs font-semibold text-primary">{material.n}</span>{material.recoveryOnly?<Badge className="bg-amber-600 text-[9px]">{locale==="zh-CN"?"中断后新增":"NEW"}</Badge>:read.has(material.id)&&<span className="flex items-center gap-1 text-[10px] text-[var(--active)]"><Check size={12}/>{locale==="zh-CN"?"已阅读":"Read"}</span>}</div><h3 className="text-sm font-semibold leading-5">{material.title[locale]}</h3><p className={`mt-2 whitespace-pre-line text-xs leading-5 text-muted-foreground ${active===material.id?"":"line-clamp-3"}`}>{material.excerpt[locale]}</p><p className="mt-3 text-[10px] text-primary">{material.meta[locale]}</p></button>)}</div>
   </aside>;
 }
 
@@ -877,6 +902,7 @@ function MemoPanel({locale,taskId,phase,memo,setMemo,t}:{locale:Locale;taskId:Re
 
 function PhaseOnePanel({locale,condition,taskId,memo,remaining,testMode,onPhaseOneCapture,setScreen}:{locale:Locale;condition:Condition;taskId:ResearchTaskId;memo:string;remaining:number;testMode:boolean;onPhaseOneCapture?:()=>void;setScreen:(screen:Screen)=>void}) {
   const task=getResearchTask(taskId);
+  const phaseOneGoals=task.phaseOneGoals;
   const [completed,setCompleted]=useState<Set<string>>(()=>new Set());
   const criterionId=(goalId:string,index:number)=>`${goalId}:${index}`;
   const toggleCriterion=(goalId:string,index:number)=>setCompleted(current=>{

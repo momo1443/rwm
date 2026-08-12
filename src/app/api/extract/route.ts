@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getResearchTask } from "@/lib/research-task";
+import { getResearchTask, researchTaskIds } from "@/lib/research-task";
 
 const requestSchema = z.object({
-  taskId: z.literal("waste"),
+  taskId: z.enum(researchTaskIds),
   locale: z.enum(["zh-CN", "en"]).default("zh-CN"),
   memo: z.string().max(20000),
   messages: z.array(z.object({
