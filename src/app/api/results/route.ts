@@ -35,7 +35,7 @@ const requestSchema = z.discriminatedUnion("action", [
     sessionId: sessionIdSchema,
     participantCode: participantCodeSchema,
     locale: z.enum(["zh-CN", "en"]),
-    condition: z.enum(["rmw", "summary", "notes", "control"]),
+    condition: z.enum(["rmw", "rmw_no_summary", "summary_only"]),
     taskId: z.literal("waste"),
     token: z.string().min(1).max(2000).optional(),
   }),

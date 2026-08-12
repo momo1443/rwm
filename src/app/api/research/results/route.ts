@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
         : database.results;
       const sessionIds = new Set(results.map((result) => result.session_id));
       return NextResponse.json({
-        schemaVersion: "rmw-research-results-v5",
+        schemaVersion: "rmw-research-results-v6",
         storageMode: resultStorageMode(),
         exportedAt: new Date().toISOString(),
         exportMode: exportMode === "analysis" ? "analysis-ready" : "all-raw",

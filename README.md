@@ -12,13 +12,15 @@ npm run dev
 Open `http://localhost:3000`. Useful review routes:
 
 - `/` — participant entry and full demo flow
-- `/?condition=control` — unsupported-recall control condition with no recovery aid
+- `/?condition=rmw` — full RMW with recovery brief, reasoning cards, and network
+- `/?condition=rmw_no_summary` — RMW cards and network without the AI recovery summary
+- `/?condition=summary_only` — AI recovery summary only
 - `/?view=task` — Phase 1 and final memo requirements
 - `/?view=work` — Phase 1 waste-sorting workspace
 - `/?view=checkpoint` — one-minute RMW save window with an extracted problem state and knowledge network
 - `/?view=interruption` — letter 2-back and color-recognition interruption tasks
 - `/?view=recovery` — RMW recovery workspace
-- `/?view=recovery&condition=summary&lang=en` — English Auto Summary condition
+- `/?view=recovery&condition=summary_only&lang=en` — English AI-summary-only condition
 - `/?view=recall` — unsupported recall gate
 - `/admin` — password-protected researcher results console
 - `/admin/blind-review` — condition-blinded pre/post memo rubric
@@ -60,7 +62,7 @@ The demo now follows one closed-loop interruption protocol:
 7. Resume with a minimal brief first, then reasoning cards, source backlinks, and the knowledge network.
 8. Continue research with editable reasoning cards while the local interaction history supports the current browser session.
 
-The `control` condition bypasses Problem State extraction and calibration. After the same interruption, it records the same unsupported-recall responses and returns the participant to the task without showing Problem State, a summary, or notes.
+The three conditions share the same task, checkpoint, interruption, unsupported recall, and fixed recovery duration. Full `rmw` shows the recovery brief, reasoning cards, and network; `rmw_no_summary` shows the cards and network without the brief; `summary_only` shows only the AI-generated recovery summary.
 
 For local review, append `?test=1` (or `&test=1` when a query already exists) to bypass timing gates. Without that explicit flag, the formal 10-minute Phase 1, one-minute checkpoint, and 10-minute recovery timing are enforced.
 

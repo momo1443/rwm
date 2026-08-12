@@ -111,7 +111,7 @@ export function RmwApp() {
       setParticipantId(getOrCreateParticipantId());
       setTestMode(params.get("test") === "1");
       if (lang === "en" || lang === "zh-CN") setLocale(lang);
-      if (c && ["summary", "notes", "rmw", "control"].includes(c)) setCondition(c);
+      if (c && ["rmw", "rmw_no_summary", "summary_only"].includes(c)) setCondition(c);
       if (view === "checkpoint") setScreen("checkpoint");
       if (view === "interruption") setScreen("interruption");
       if (view === "recovery") setScreen("workspace");
@@ -206,12 +206,11 @@ function Landing({
         <fieldset className="mt-7">
           <legend className="text-sm font-semibold">{locale==="zh-CN"?"选择测试方式":"Choose a test condition"}</legend>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">{locale==="zh-CN"?"此选项用于研究者测试。正式实验建议由系统随机分组。":"For researcher testing. Formal studies should assign conditions randomly."}</p>
-          <div className="mt-3 grid grid-cols-2 gap-2">
+          <div className="mt-3 grid gap-2">
             {([
-              {value:"rmw",zh:"RMW 推理恢复",en:"RMW recovery"},
-              {value:"summary",zh:"自动摘要",en:"Auto summary"},
-              {value:"notes",zh:"用户笔记",en:"User notes"},
-              {value:"control",zh:"无辅助对照组",en:"No-support control"},
+              {value:"rmw",zh:"完整 RMW",en:"Full RMW"},
+              {value:"rmw_no_summary",zh:"RMW（无 AI 摘要）",en:"RMW without AI summary"},
+              {value:"summary_only",zh:"仅 AI 摘要",en:"AI summary only"},
             ] as const).map(option=><label key={option.value} className={`cursor-pointer rounded-xl border px-3 py-3 text-sm transition ${condition===option.value?"border-primary bg-secondary/65 text-primary":"bg-white hover:border-primary/45"}`}>
               <input type="radio" name="condition" value={option.value} checked={condition===option.value} onChange={()=>setCondition(option.value)} className="mr-2 accent-[var(--primary)]"/>
               {locale==="zh-CN"?option.zh:option.en}
@@ -431,9 +430,7 @@ function Recall({ locale,condition,setScreen,t }: {locale:Locale;condition:Condi
         <div>
           <p className="font-mono text-[10px] uppercase tracking-[.16em] text-muted-foreground">{locale==="zh-CN"?"无辅助回忆 · 01:30":"Unsupported recall · 01:30"}</p>
           <h1 id="recall-annotation-title" className="mt-2 text-2xl font-semibold tracking-tight">{t.recallTitle}</h1>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">{condition==="control"
-            ?(locale==="zh-CN"?"请仅凭记忆填写。提交后直接继续研究，不会显示任何恢复辅助材料。":"Answer from memory only. After submission, you will continue without recovery support.")
-            :t.recallSub}</p>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">{t.recallSub}</p>
         </div>
         <Brand />
       </div>
@@ -455,7 +452,7 @@ function Recall({ locale,condition,setScreen,t }: {locale:Locale;condition:Condi
         seconds={5}
         ready={complete}
         locale={locale}
-        label={condition==="control"?(locale==="zh-CN"?"提交并继续研究":"Submit and continue"):t.submitRecall}
+        label={t.submitRecall}
         blockedLabel={locale==="zh-CN"?"请完成全部回忆题":"Answer every recall prompt"}
         className="mt-7 h-12 w-full"
         onClick={()=>{
@@ -471,11 +468,7 @@ function Recall({ locale,condition,setScreen,t }: {locale:Locale;condition:Condi
           saveRemoteStudySnapshot({
             recall:{currentGoal:responses[0],position:responses[1],uncertain:responses[2]},
           });
-          if(condition==="control"){
-            eventLog("control_resumption_started",{supportRevealed:false},{stage:"recovery"});
-          }else{
-            eventLog("recovery_support_revealed",{condition},{stage:"recovery"});
-          }
+          eventLog("recovery_support_revealed",{condition},{stage:"recovery"});
           setScreen("workspace");
         }}
       />
@@ -673,7 +666,7 @@ function Workspace({
         timerExpiredLoggedRef.current=true;
         const stage=phase==="work"?"research_work":"recovery";
         eventLog("workspace_timer_expired",{taskId,phase,durationSeconds:WORKSPACE_DURATION_SECONDS},{stage});
-        const nextScreen: Screen=phase==="work"?(condition==="control"?"interruption":"checkpoint"):"complete";
+        const nextScreen: Screen=phase==="work"?"checkpoint":"complete";
         if(phase==="work")onPhaseOneCaptureRef.current?.();
         eventLog("workspace_auto_advanced",{taskId,phase,nextScreen},{stage});
         setScreen(nextScreen);
@@ -910,12 +903,12 @@ function PhaseOnePanel({locale,condition,taskId,memo,remaining,testMode,onPhaseO
         })}</div>
       </section>)}</div>
     </div>
-    <div className="shrink-0 border-t bg-white px-5 py-3"><div className="mb-2 flex justify-between text-[10px] text-muted-foreground"><span>{checkpointReady?(condition==="control"?(locale==="zh-CN"?"中断任务入口已开放":"Interruption task is available"):(locale==="zh-CN"?"保存窗口已开放":"Save window open")):(locale==="zh-CN"?"最后 3 分钟开放下一步":"Next step opens in the final 3 minutes")}</span><span>{memoCount} {locale==="zh-CN"?"字":"words"} · {completed.size}/{totalCriteria} {locale==="zh-CN"?"评价点":"criteria"}</span></div><TimedButton seconds={10} ready={checkpointReady} locale={locale} label={condition==="control"?(locale==="zh-CN"?"进入中断任务":"Begin interruption task"):(locale==="zh-CN"?"保存推理位置并进入中断任务":"Save reasoning position and begin interruption")} blockedLabel={locale==="zh-CN"?"下一步尚未开放":"Next step is not open yet"} className="h-11 w-full text-sm" onClick={()=>{const nextScreen=condition==="control"?"interruption":"checkpoint";onPhaseOneCapture?.();eventLog(condition==="control"?"phase_one_control_completed":"phase_one_checkpoint_requested",{taskId,condition,completedGoals:completedGoalCount,completedCriteria:completed.size,totalCriteria,memoCount,remaining,nextScreen},{stage:"research_work"});setScreen(nextScreen)}} /></div>
+    <div className="shrink-0 border-t bg-white px-5 py-3"><div className="mb-2 flex justify-between text-[10px] text-muted-foreground"><span>{checkpointReady?(locale==="zh-CN"?"保存窗口已开放":"Save window open"):(locale==="zh-CN"?"最后 3 分钟开放下一步":"Next step opens in the final 3 minutes")}</span><span>{memoCount} {locale==="zh-CN"?"字":"words"} · {completed.size}/{totalCriteria} {locale==="zh-CN"?"评价点":"criteria"}</span></div><TimedButton seconds={10} ready={checkpointReady} locale={locale} label={locale==="zh-CN"?"保存推理位置并进入中断任务":"Save reasoning position and begin interruption"} blockedLabel={locale==="zh-CN"?"下一步尚未开放":"Next step is not open yet"} className="h-11 w-full text-sm" onClick={()=>{const nextScreen="checkpoint";onPhaseOneCapture?.();eventLog("phase_one_checkpoint_requested",{taskId,condition,completedGoals:completedGoalCount,completedCriteria:completed.size,totalCriteria,memoCount,remaining,nextScreen},{stage:"research_work"});setScreen(nextScreen)}} /></div>
   </section>;
 }
 
 function RecoveryPanel({locale,condition,cards,relations,selected,setSelected,updateStatus,togglePin,updateContent,remaining,testMode,setScreen,t}:{locale:Locale;condition:Condition;cards:ReasoningCard[];relations:CardRelation[];selected:string;setSelected:(s:string)=>void;updateStatus:(id:string,s:EpistemicStatus)=>void;togglePin:(id:string)=>void;updateContent:(id:string,value:string)=>void;remaining:number;testMode:boolean;setScreen:(s:Screen)=>void;t:typeof copy[Locale]}) {
-  const [activeTab,setActiveTab]=useState<"brief"|"cards"|"network">("brief");
+  const [activeTab,setActiveTab]=useState<"brief"|"cards"|"network">(()=>condition==="rmw_no_summary"?"cards":"brief");
   const renderedRef=useRef(false);
   const viewedTabsRef=useRef(new Set<string>());
   useEffect(()=>{
@@ -923,34 +916,28 @@ function RecoveryPanel({locale,condition,cards,relations,selected,setSelected,up
     renderedRef.current=true;
     eventLog("recovery_support_rendered",{
       condition,
-      supportType:condition==="control"?"none":condition,
+      supportType:condition,
       cardCount:cards.length,
       cardIds:cards.map(card=>card.id),
       relationCount:relations.length,
     },{stage:"recovery",targetType:"recovery_support",targetId:condition});
   },[cards,condition,relations.length]);
   useEffect(()=>{
-    if(condition!=="rmw"||!cards.length||viewedTabsRef.current.has(activeTab))return;
+    if(condition==="summary_only"||!cards.length||viewedTabsRef.current.has(activeTab))return;
     viewedTabsRef.current.add(activeTab);
     eventLog("recovery_tab_viewed",{tab:activeTab,cardCount:cards.length},{stage:"recovery",targetType:"recovery_tab",targetId:activeTab});
   },[activeTab,cards.length,condition]);
-  if(condition==="control")return <div className="flex min-h-0 flex-col bg-[#fbfcfe]"><div className="flex h-14 shrink-0 items-center border-b px-5"><h2 className="flex items-center gap-2 font-semibold"><Brain size={20} className="text-primary"/>{locale==="zh-CN"?"继续研究":"Continue research"}</h2></div><div className="m-6 rounded-xl border bg-white p-5 text-sm leading-6 text-muted-foreground">{locale==="zh-CN"?"本组不提供 Problem State、摘要或笔记等恢复辅助。请根据刚才的无辅助回忆继续完成研究任务。":"This condition provides no Problem State, summary, notes, or other recovery aid. Continue the task using your unsupported recall."}</div><PrimaryContinue locale={locale} remaining={remaining} testMode={testMode} setScreen={setScreen} t={t}/></div>;
   if(!cards.length)return <RecoveryShell t={t}><div className="m-6 rounded-xl border bg-white p-5 text-sm leading-6 text-muted-foreground">{locale==="zh-CN"?"本次没有保存经过参与者校准的 Problem State，因此不会显示演示卡片。":"No participant-calibrated problem state was saved, so no demo cards are shown."}</div><PrimaryContinue locale={locale} remaining={remaining} testMode={testMode} setScreen={setScreen} t={t}/></RecoveryShell>;
   const main=cards.find(card=>card.goalLevel==="main");
   const position=cards.filter(card=>card.goalLevel==="subgoal"&&card.status!=="expired").slice(0,2).map(card=>card.content[locale]).join("；");
   const uncertain=cards.find(card=>card.status==="uncertain");
-  const ruled=cards.find(card=>card.cardType==="path"&&card.status==="expired");
   const next=cards.find(card=>card.cardType==="next_action");
   const summary=locale==="zh-CN"
     ?`当前目标：${main?.content[locale]||"未识别"}。推理位置：${position||"未识别"}。仍需核查：${uncertain?.content[locale]||"未识别"}。下一步：${next?.content[locale]||"未识别"}。`
     :`Current goal: ${main?.content[locale]||"not identified"}. Reasoning position: ${position||"not identified"}. Still uncertain: ${uncertain?.content[locale]||"not identified"}. Next step: ${next?.content[locale]||"not identified"}.`;
-  const notes=locale==="zh-CN"
-    ?`当前目标：${main?.content[locale]||"—"}\n推理位置：${position||"—"}\n存疑：${uncertain?.content[locale]||"—"}\n已排除：${ruled?.content[locale]||"—"}\n下一步：${next?.content[locale]||"—"}`
-    :`Current goal: ${main?.content[locale]||"—"}\nReasoning position: ${position||"—"}\nUncertain: ${uncertain?.content[locale]||"—"}\nRuled out: ${ruled?.content[locale]||"—"}\nNext step: ${next?.content[locale]||"—"}`;
-  if(condition==="summary") return <RecoveryShell t={t}><div className="mx-6 mt-4 rounded-xl bg-muted/60 p-5"><p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Auto Summary</p><p className="mt-3 text-sm leading-7">{summary}</p></div><PrimaryContinue locale={locale} remaining={remaining} testMode={testMode} setScreen={setScreen} t={t}/></RecoveryShell>;
-  if(condition==="notes") return <RecoveryShell t={t}><div className="mx-6 mt-4"><p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Your notes</p><Textarea className="min-h-40 leading-7" defaultValue={notes}/></div><PrimaryContinue locale={locale} remaining={remaining} testMode={testMode} setScreen={setScreen} t={t}/></RecoveryShell>;
-  return <RecoveryShell t={t}><Tabs value={activeTab} onValueChange={(value)=>setActiveTab(value as "brief"|"cards"|"network")} className="flex min-h-0 flex-1 flex-col"><div className="flex items-center justify-between border-b px-5 py-2.5"><TabsList className="inline-flex h-9 items-center justify-center rounded-lg bg-secondary/80 p-1 text-muted-foreground"><TabsTrigger className="inline-flex h-7 items-center justify-center rounded-md px-3.5 text-xs font-medium transition-all data-active:bg-white data-active:text-foreground data-active:shadow-sm" value="brief">{t.resume}</TabsTrigger><TabsTrigger className="inline-flex h-7 items-center justify-center rounded-md px-3.5 text-xs font-medium transition-all data-active:bg-white data-active:text-foreground data-active:shadow-sm" value="cards">{t.cards}</TabsTrigger><TabsTrigger className="inline-flex h-7 items-center justify-center rounded-md px-3.5 text-xs font-medium transition-all data-active:bg-white data-active:text-foreground data-active:shadow-sm" value="network">{t.network}</TabsTrigger></TabsList><span className="text-[10px] font-medium text-muted-foreground">{cards.length} {t.allCards}</span></div>
-    <TabsContent value="brief" className="m-0 min-h-0 flex-1 overflow-auto"><ResumeBrief locale={locale} cards={cards} t={t}/></TabsContent>
+  if(condition==="summary_only") return <RecoveryShell t={t}><div className="mx-6 mt-4 rounded-xl bg-muted/60 p-5"><p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">AI Summary</p><p className="mt-3 text-sm leading-7">{summary}</p></div><PrimaryContinue locale={locale} remaining={remaining} testMode={testMode} setScreen={setScreen} t={t}/></RecoveryShell>;
+  return <RecoveryShell t={t}><Tabs value={activeTab} onValueChange={(value)=>setActiveTab(value as "brief"|"cards"|"network")} className="flex min-h-0 flex-1 flex-col"><div className="flex items-center justify-between border-b px-5 py-2.5"><TabsList className="inline-flex h-9 items-center justify-center rounded-lg bg-secondary/80 p-1 text-muted-foreground">{condition==="rmw"&&<TabsTrigger className="inline-flex h-7 items-center justify-center rounded-md px-3.5 text-xs font-medium transition-all data-active:bg-white data-active:text-foreground data-active:shadow-sm" value="brief">{t.resume}</TabsTrigger>}<TabsTrigger className="inline-flex h-7 items-center justify-center rounded-md px-3.5 text-xs font-medium transition-all data-active:bg-white data-active:text-foreground data-active:shadow-sm" value="cards">{t.cards}</TabsTrigger><TabsTrigger className="inline-flex h-7 items-center justify-center rounded-md px-3.5 text-xs font-medium transition-all data-active:bg-white data-active:text-foreground data-active:shadow-sm" value="network">{t.network}</TabsTrigger></TabsList><span className="text-[10px] font-medium text-muted-foreground">{cards.length} {t.allCards}</span></div>
+    {condition==="rmw"&&<TabsContent value="brief" className="m-0 min-h-0 flex-1 overflow-auto"><ResumeBrief locale={locale} cards={cards} t={t}/></TabsContent>}
     <TabsContent value="cards" className="m-0 grid min-h-0 flex-1 grid-cols-[1.18fr_.82fr]"><div className="hide-scrollbar min-h-0 overflow-y-auto border-r px-4 py-3"><div className="mb-3 rounded-lg bg-secondary/70 p-3 text-xs leading-5 text-secondary-foreground"><strong>{t.ready}：</strong>{t.readFirst}</div><GoalHierarchy cards={cards} locale={locale} selected={selected} setSelected={setSelected}/><p className="mb-2 mt-4 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Problem state cards</p>{cards.filter(card=>card.cardType!=="goal").map(card=><ReasoningCardView key={card.id} card={card} locale={locale} selected={selected===card.id} onSelect={()=>{setSelected(card.id);eventLog("card_selected",{id:card.id},{stage:"recovery",targetType:"reasoning_card",targetId:card.id})}} updateStatus={updateStatus} t={t}/>)}</div><CardInspector key={`${selected}-${locale}`} card={cards.find(card=>card.id===selected) || cards[0]} locale={locale} updateStatus={updateStatus} togglePin={togglePin} updateContent={updateContent} t={t}/></TabsContent>
     <TabsContent value="network" className="m-0 min-h-0 flex-1"><KnowledgeNetwork locale={locale} cards={cards} relations={relations} selected={selected} setSelected={setSelected}/></TabsContent>
   </Tabs><PrimaryContinue locale={locale} remaining={remaining} testMode={testMode} setScreen={setScreen} t={t}/></RecoveryShell>;
