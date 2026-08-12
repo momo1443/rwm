@@ -556,7 +556,7 @@ export function RmwCheckpoint({
   const suspended = cards.filter((card) => card.goalLevel === "suspended").slice(0, 3);
   const rejected = cards.find((card) => card.kind === "path");
   const selectedCard = cards.find((card) => card.id === selected) || cards[0];
-  const extractionReady = mode === "live";
+  const extractionReady = condition === "rmw_no_summary" || mode === "live";
   const modeLabel = mode === "live" ? "DeepSeek" : mode === "loading"
     ? (locale === "zh-CN" ? "分析中" : "Analyzing")
     : mode === "insufficient"

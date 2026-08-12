@@ -1,3 +1,5 @@
+import { syncRemoteEvent } from "./remote-results";
+
 export interface StudyEvent {
   id: string;
   sessionId: string;
@@ -124,4 +126,3 @@ export function eventLog(
   localStorage.setItem(eventStorageKey(sessionId), JSON.stringify([...current, item].slice(-1000)));
   syncRemoteEvent(item as unknown as Record<string, unknown>);
 }
-import { syncRemoteEvent } from "./remote-results";

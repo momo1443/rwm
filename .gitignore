@@ -24,6 +24,7 @@
 /.wrangler/
 /.vinext/
 /.rmw-results/
+/.openai/
 
 # misc
 .DS_Store

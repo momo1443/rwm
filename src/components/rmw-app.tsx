@@ -657,18 +657,23 @@ function RecoveryAcceptFloat({
   </div>;
 }
 
-function WorkspaceTour({locale,onComplete}:{locale:Locale;onComplete:()=>void}) {
-  const steps=locale==="zh-CN"?[
+function WorkspaceTour({locale,condition,onComplete}:{locale:Locale;condition:Condition;onComplete:()=>void}) {
+  const zhSteps:{target:string;title:string;body:string}[]=[
     {target:"materials",title:"先阅读实验材料",body:"这里是当前任务的证据与约束材料。点击不同材料查看全文，系统会记录阅读进度。"},
     {target:"memo",title:"在工作区记录思考",body:"中间的工作区用于写下候选框架、假设、不确定点、排除方向和下一步。内容会持续保存；拖动两侧的竖向分隔条可调整各列宽度。"},
     {target:"goals",title:"检查右上角目标",body:"右上角用于逐项核对第一阶段目标。目标内容可独立上下滚动。"},
-    {target:"chat",title:"与 AI 比较问题框架",body:"右下角是 AI 助手。请要求它引用材料编号，并区分材料证据、推断和仍需验证的假设。拖动右侧中间的分隔条，可以上下调整两个窗口的高度。"},
-  ]:[
+  ];
+  const enSteps:{target:string;title:string;body:string}[]=[
     {target:"materials",title:"Read the evidence first",body:"These sources describe the current task evidence and constraints. Open each one to read it; reading progress is recorded."},
     {target:"memo",title:"Record reasoning in the workspace",body:"Use the central workspace for candidate framings, hypotheses, uncertainties, rejected directions, and your next step. Its content is continuously saved; drag either vertical divider to resize the columns."},
     {target:"goals",title:"Check the upper-right goals",body:"Use the upper-right window to check Phase 1 requirements. Its content scrolls independently."},
-    {target:"chat",title:"Compare framings with AI",body:"The AI assistant is in the lower-right window. Ask it to cite material numbers and separate evidence, inference, and unverified assumptions. Drag the divider to resize the two right-hand windows."},
   ];
+  // Only show the AI chat tour step for conditions that have AI chat
+  if(condition!=="rmw_no_summary"){
+    zhSteps.push({target:"chat",title:"与 AI 比较问题框架",body:"右下角是 AI 助手。请要求它引用材料编号，并区分材料证据、推断和仍需验证的假设。拖动右侧中间的分隔条，可以上下调整两个窗口的高度。"});
+    enSteps.push({target:"chat",title:"Compare framings with AI",body:"The AI assistant is in the lower-right window. Ask it to cite material numbers and separate evidence, inference, and unverified assumptions. Drag the divider to resize the two right-hand windows."});
+  }
+  const steps=locale==="zh-CN"?zhSteps:enSteps;
   const [index,setIndex]=useState(0);
   const [rect,setRect]=useState<DOMRect|null>(null);
   const step=steps[index];
@@ -906,10 +911,11 @@ function Workspace({
       >
         <span className="h-12 w-1 rounded-full bg-border transition group-hover:bg-primary/45"/>
       </button>
-      <section ref={rightColumnRef} className="grid min-h-0 min-w-0 overflow-hidden bg-white" style={{gridTemplateRows:`${rightTopRatio}fr 10px ${100-rightTopRatio}fr`}}>
+      <section ref={rightColumnRef} className="grid min-h-0 min-w-0 overflow-hidden bg-white" style={condition==="rmw_no_summary"?{gridTemplateRows:"1fr"}:{gridTemplateRows:`${rightTopRatio}fr 10px ${100-rightTopRatio}fr`}}>
         {phase==="work"
           ?<PhaseOnePanel locale={locale} condition={condition} taskId={taskId} memo={memo} remaining={remainingSeconds} testMode={testMode} onPhaseOneCapture={onPhaseOneCapture} setScreen={setScreen}/>
           :<RecoveryPanel locale={locale} condition={condition} cards={cards} relations={recoveryRelations} selected={selected} setSelected={setSelected} updateStatus={updateStatus} togglePin={togglePin} updateContent={updateContent} remaining={remainingSeconds} testMode={testMode} setScreen={setScreen} t={t}/>}
+        {condition!=="rmw_no_summary"&&<>
         <button
           type="button"
           aria-label={locale==="zh-CN"?"上下拖动，调整目标与 AI 助手窗口高度":"Drag vertically to resize the goals and AI-assistant windows"}
@@ -927,9 +933,10 @@ function Workspace({
           <span className="h-1 w-12 rounded-full bg-border transition group-hover:bg-primary/45"/>
         </button>
         <ChatPanel locale={locale} chat={chat} message={message} setMessage={setMessage} send={send} isLoading={isLoading} error={chatError} t={t}/>
+        </>}
       </section>
     </div>
-    {showTour&&<WorkspaceTour locale={locale} onComplete={()=>setShowTour(false)}/>}
+    {showTour&&<WorkspaceTour locale={locale} condition={condition} onComplete={()=>setShowTour(false)}/>}
     {showRecoveryAccept&&<RecoveryAcceptFloat locale={locale} cards={cards} t={t} onAccept={acceptRecoveryFloat}/>}
   </div>
 }
