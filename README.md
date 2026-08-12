@@ -86,7 +86,7 @@ RESEARCHER_ADMIN_PASSWORD=replace-with-a-strong-researcher-password
 RESEARCHER_SESSION_SECRET=replace-with-a-different-long-random-secret
 ```
 
-For a deployed website, apply all files in `supabase/migrations/` in timestamp order, including `20260811140353_recovery_outcome_metrics.sql`, omit `RMW_LOCAL_RESULTS_DIR`, and configure:
+For a deployed website, apply all files in `supabase/migrations/` in timestamp order, including `20260812090000_city_policy_recovery_assessment.sql`, omit `RMW_LOCAL_RESULTS_DIR`, and configure:
 
 ```bash
 SUPABASE_URL=https://your-project.supabase.co

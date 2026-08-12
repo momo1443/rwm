@@ -34,11 +34,28 @@ import {
 } from "@/lib/research-task";
 import type { CardRelation, Condition, EpistemicStatus, Locale, ProblemStateSnapshot, ReasoningCard } from "@/lib/rmw-types";
 import { InterruptionTask, RmwCheckpoint } from "@/components/rmw-checkpoint";
+import { CityPolicyProbePage } from "@/components/city-policy-probe";
 import { TimedButton } from "@/components/timed-button";
+import type { CityPolicyAssessment, CityPolicyProbe, CityPolicyProbeStage } from "@/lib/city-policy-assessment";
 
-type Screen = "landing" | "brief" | "survey" | "work" | "checkpoint" | "interruption" | "workspace" | "recall" | "complete";
+type Screen = "landing" | "brief" | "survey" | "work" | "city_t1" | "checkpoint" | "interruption" | "recall" | "city_t2" | "city_support" | "city_t3" | "workspace" | "complete";
 type ChatMessage = { role: "user" | "assistant"; text: string };
 const WORKSPACE_DURATION_SECONDS = 600;
+
+function withCityPolicyProbe(assessment: CityPolicyAssessment, stage: CityPolicyProbeStage, probe: CityPolicyProbe): CityPolicyAssessment {
+  return { ...assessment, probes: { ...assessment.probes, [stage]: probe } };
+}
+
+function cityPolicyProbeEventPayload(stage: CityPolicyProbeStage, probe: CityPolicyProbe) {
+  return {
+    stage,
+    optionRanking: probe.optionRanking,
+    criterionRanking: probe.criterionRanking,
+    confidence: probe.confidence,
+    reasonLength: probe.topChoiceReason.length,
+    uncertaintyLength: probe.decisionChangingUncertainty.length,
+  };
+}
 
 const copy = {
   "zh-CN": {
@@ -100,6 +117,7 @@ export function RmwApp() {
   const [participantId, setParticipantId] = useState("");
   const [startError, setStartError] = useState("");
   const [problemState, setProblemState] = useState<ProblemStateSnapshot | null>(() => readProblemStateSnapshot());
+  const [cityPolicyAssessment, setCityPolicyAssessment] = useState<CityPolicyAssessment>({ version: "city-policy-recovery-v1", taskId: "city_policy", probes: {} });
   const completionSubmittedRef = useRef(false);
   const t = copy[locale];
 
@@ -127,6 +145,10 @@ export function RmwApp() {
       if (view === "recall") setScreen("recall");
       if (view === "task") setScreen("brief");
       if (view === "work") setScreen("work");
+      if (view === "city-t1") setScreen("city_t1");
+      if (view === "city-t2") setScreen("city_t2");
+      if (view === "city-support") setScreen("city_support");
+      if (view === "city-t3") setScreen("city_t3");
     });
     return () => cancelAnimationFrame(frame);
   }, []);
@@ -134,8 +156,8 @@ export function RmwApp() {
   useEffect(() => {
     if (screen !== "complete" || completionSubmittedRef.current) return;
     completionSubmittedRef.current = true;
-    completeRemoteStudy({ memo, chat, problemState });
-  }, [chat, memo, problemState, screen]);
+    completeRemoteStudy({ memo, chat, problemState, taskAssessment: taskId === "city_policy" ? cityPolicyAssessment : undefined });
+  }, [chat, cityPolicyAssessment, memo, problemState, screen, taskId]);
 
   return (
     <>
@@ -157,6 +179,7 @@ export function RmwApp() {
           setMemo(task.starterMemo[locale]);
           setChat([{ role: "assistant", text: task.assistantIntro[locale] }]);
           setProblemState(null);
+          setCityPolicyAssessment({ version: "city-policy-recovery-v1", taskId: "city_policy", probes: {} });
           saveProblemStateSnapshot(null);
           eventLog("research_task_started", { taskId, assignment: "selected_task_and_condition", participantId, condition }, { stage: "task_setup" });
           setScreen("brief");
@@ -168,9 +191,33 @@ export function RmwApp() {
           saveRemoteStudySnapshot({ phaseOneMemo: memo, phaseOneChat: chat, phaseOneCapturedAt: capturedAt });
           eventLog("phase_one_snapshot_captured", { taskId, memoLength: memo.length, chatTurnCount: chat.length, capturedAt }, { stage: "research_work", targetType: "memo" });
         }} t={t} />}
+        {screen === "city_t1" && <CityPolicyProbePage locale={locale} stage="t1" onSubmit={(probe) => {
+          const next = withCityPolicyProbe(cityPolicyAssessment, "t1", probe);
+          setCityPolicyAssessment(next);
+          saveRemoteStudySnapshot({ taskAssessment: next });
+          eventLog("city_policy_probe_submitted", cityPolicyProbeEventPayload("t1", probe), { stage: "pre_interruption_assessment", targetType: "task_probe", targetId: "city_policy_t1" });
+          setScreen("checkpoint");
+        }} />}
         {screen === "checkpoint" && <RmwCheckpoint locale={locale} taskId={taskId} memo={memo} messages={chat} testMode={testMode} onBack={() => setScreen("work")} onContinue={(snapshot) => { if (snapshot) { setProblemState(snapshot); saveProblemStateSnapshot(snapshot); saveRemoteStudySnapshot({ memo, chat, problemState: snapshot }); } setScreen("interruption"); }} />}
         {screen === "interruption" && <InterruptionTask locale={locale} fastMode={testMode} onComplete={() => setScreen("recall")} />}
-        {screen === "recall" && <Recall locale={locale} condition={condition} setScreen={setScreen} t={t} />}
+        {screen === "recall" && <Recall locale={locale} condition={condition} taskId={taskId} setScreen={setScreen} t={t} />}
+        {screen === "city_t2" && <CityPolicyProbePage locale={locale} stage="t2" onSubmit={(probe) => {
+          const next = withCityPolicyProbe(cityPolicyAssessment, "t2", probe);
+          setCityPolicyAssessment(next);
+          saveRemoteStudySnapshot({ taskAssessment: next });
+          eventLog("city_policy_probe_submitted", cityPolicyProbeEventPayload("t2", probe), { stage: "unsupported_recovery_assessment", targetType: "task_probe", targetId: "city_policy_t2" });
+          eventLog("recovery_support_revealed", { condition, taskId, purpose: "city_policy_t3" }, { stage: "recovery_assessment" });
+          setScreen("city_support");
+        }} />}
+        {screen === "city_support" && <CityPolicyRecoverySupport locale={locale} condition={condition} problemState={problemState} testMode={testMode} onContinue={() => setScreen("city_t3")} />}
+        {screen === "city_t3" && <CityPolicyProbePage locale={locale} stage="t3" onSubmit={(probe) => {
+          const next = withCityPolicyProbe(cityPolicyAssessment, "t3", probe);
+          setCityPolicyAssessment(next);
+          saveRemoteStudySnapshot({ taskAssessment: next });
+          eventLog("city_policy_probe_submitted", cityPolicyProbeEventPayload("t3", probe), { stage: "supported_recovery_assessment", targetType: "task_probe", targetId: "city_policy_t3" });
+          eventLog("city_policy_new_evidence_unlocked", { afterProbe: "t3" }, { stage: "recovery", targetType: "material", targetId: "d6" });
+          setScreen("workspace");
+        }} />}
         {screen === "workspace" && <Workspace key={`recovery-${taskId}-${locale}`} locale={locale} condition={condition} taskId={taskId} phase="recovery" problemState={problemState} memo={memo} setMemo={setMemo} chat={chat} setChat={setChat} setScreen={setScreen} testMode={testMode} t={t} />}
         {screen === "complete" && <Complete setScreen={setScreen} t={t} />}
       </main>
@@ -439,7 +486,7 @@ function CenteredShell({step,title,children}:{step?:string;title:string;children
 
 function Brand(){return <div className="flex items-center gap-3"><div className="grid size-10 place-items-center rounded-xl bg-primary text-white"><Brain size={23} weight="duotone"/></div><div><div className="font-semibold tracking-tight">RMW</div><div className="text-[10px] uppercase tracking-[.16em] text-muted-foreground">Reasoning Memory</div></div></div>}
 
-function Recall({ locale,condition,setScreen,t }: {locale:Locale;condition:Condition;setScreen:(s:Screen)=>void;t:typeof copy[Locale]}) {
+function Recall({ locale,condition,taskId,setScreen,t }: {locale:Locale;condition:Condition;taskId:ResearchTaskId;setScreen:(s:Screen)=>void;t:typeof copy[Locale]}) {
   const fields=[
     { label:t.currentGoal, hint:t.currentGoalHint, key:"currentGoal" },
     { label:t.position, hint:t.positionHint, key:"position" },
@@ -492,13 +539,55 @@ function Recall({ locale,condition,setScreen,t }: {locale:Locale;condition:Condi
           saveRemoteStudySnapshot({
             recall:{currentGoal:responses[0],position:responses[1],uncertain:responses[2]},
           });
-          eventLog("recovery_support_revealed",{condition},{stage:"recovery"});
-          setScreen("workspace");
+          if(taskId==="city_policy")setScreen("city_t2");
+          else{
+            eventLog("recovery_support_revealed",{condition},{stage:"recovery"});
+            setScreen("workspace");
+          }
         }}
       />
     </div>
     </div>
   </div>;
+}
+
+function CityPolicyRecoverySupport({ locale, condition, problemState, testMode, onContinue }: { locale: Locale; condition: Condition; problemState: ProblemStateSnapshot | null; testMode: boolean; onContinue: () => void }) {
+  const cards = useMemo(() => problemState ? toReasoningCards(problemState, locale) : [], [locale, problemState]);
+  const relations = useMemo(() => problemState ? toCardRelations(problemState) : [], [problemState]);
+  const [activeTab, setActiveTab] = useState<"brief" | "cards" | "network">(() => condition === "rmw_no_summary" ? "cards" : "brief");
+  const [selected, setSelected] = useState(() => cards[0]?.id || "");
+  const renderedRef = useRef(false);
+  useEffect(() => {
+    if (renderedRef.current) return;
+    renderedRef.current = true;
+    eventLog("recovery_assessment_support_rendered", { condition, taskId: "city_policy", cardCount: cards.length, relationCount: relations.length }, { stage: "recovery_assessment", targetType: "recovery_support", targetId: condition });
+  }, [cards.length, condition, relations.length]);
+  const main = cards.find((card) => card.goalLevel === "main");
+  const position = cards.filter((card) => card.goalLevel === "subgoal" && card.status !== "expired").slice(0, 2).map((card) => card.content[locale]).join("；");
+  const uncertain = cards.find((card) => card.status === "uncertain");
+  const next = cards.find((card) => card.cardType === "next_action");
+  const summary = locale === "zh-CN"
+    ? `当前目标：${main?.content[locale] || "未识别"}。推理位置：${position || "未识别"}。仍需核查：${uncertain?.content[locale] || "未识别"}。下一步：${next?.content[locale] || "未识别"}。`
+    : `Current goal: ${main?.content[locale] || "not identified"}. Reasoning position: ${position || "not identified"}. Still uncertain: ${uncertain?.content[locale] || "not identified"}. Next step: ${next?.content[locale] || "not identified"}.`;
+  const viewedRef = useRef(new Set<string>());
+  useEffect(() => {
+    if (viewedRef.current.has(activeTab)) return;
+    viewedRef.current.add(activeTab);
+    eventLog("recovery_assessment_tab_viewed", { tab: activeTab }, { stage: "recovery_assessment", targetType: "recovery_tab", targetId: activeTab });
+  }, [activeTab]);
+
+  return <main className="flex min-h-screen flex-col bg-[#f7f6f2] p-6">
+    <div className="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col overflow-hidden rounded-2xl border bg-white shadow-[0_18px_60px_rgba(35,40,65,.08)]">
+      <header className="flex items-start justify-between gap-4 border-b px-6 py-5"><div><p className="font-mono text-[10px] uppercase tracking-[.16em] text-primary">{locale === "zh-CN" ? "恢复支持 · 新证据尚未开放" : "Recovery support · New evidence remains hidden"}</p><h1 className="mt-2 text-xl font-semibold">{locale === "zh-CN" ? "请使用当前方式恢复中断前的决策位置" : "Use the assigned support to recover your decision state"}</h1><p className="mt-1 text-xs leading-5 text-muted-foreground">{locale === "zh-CN" ? "查看结束后将再次记录方案和标准排序。此页面不会展示新增材料。" : "Your option and criterion rankings will be recorded again after this page. No new material is shown here."}</p></div><Brain size={30} className="text-primary" /></header>
+      {!cards.length ? <div className="m-6 flex-1 rounded-xl border bg-muted/30 p-5 text-sm text-muted-foreground">{locale === "zh-CN" ? "本次运行没有可用的恢复状态。请记录该运行用于数据质量审核。" : "No recovery state is available for this run. Flag it for data-quality review."}</div> : condition === "summary_only" ? <div className="m-6 flex-1 rounded-xl bg-muted/60 p-6"><p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">AI Summary</p><p className="mt-4 max-w-3xl text-sm leading-8">{summary}</p></div> : <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "brief" | "cards" | "network")} className="flex min-h-0 flex-1 flex-col">
+        <div className="border-b px-6 py-3"><TabsList>{condition === "rmw" && <TabsTrigger value="brief">{locale === "zh-CN" ? "恢复摘要" : "Resume brief"}</TabsTrigger>}<TabsTrigger value="cards">{locale === "zh-CN" ? "推理卡片" : "Reasoning cards"}</TabsTrigger><TabsTrigger value="network">{locale === "zh-CN" ? "知识网络" : "Knowledge network"}</TabsTrigger></TabsList></div>
+        {condition === "rmw" && <TabsContent value="brief" className="m-0 min-h-0 flex-1 overflow-auto"><ResumeBrief locale={locale} cards={cards} t={copy[locale]} /></TabsContent>}
+        <TabsContent value="cards" className="m-0 min-h-0 flex-1 overflow-auto p-5"><div className="mx-auto max-w-3xl"><GoalHierarchy cards={cards} locale={locale} selected={selected} setSelected={setSelected} /><div className="mt-4 space-y-2">{cards.filter((card) => card.cardType !== "goal").map((card) => <button type="button" key={card.id} onClick={() => { setSelected(card.id); eventLog("recovery_assessment_card_viewed", { cardId: card.id, cardType: card.cardType }, { stage: "recovery_assessment", targetType: "reasoning_card", targetId: card.id }); }} className={`w-full rounded-lg border p-3 text-left transition ${selected === card.id ? "border-indigo-300 bg-indigo-50/55 ring-2 ring-indigo-100" : "bg-white hover:bg-muted/30"}`}><div className="flex items-center gap-2"><Badge variant="outline" className="text-[9px]">{card.cardType}</Badge><Badge variant="secondary" className="text-[9px]">{card.status}</Badge></div><p className="mt-2 text-sm font-medium leading-5">{card.content[locale]}</p><p className="mt-1 text-[11px] leading-5 text-muted-foreground">{card.detail[locale]}</p>{card.sourceRefs.length > 0 && <p className="mt-2 text-[10px] text-primary">{locale === "zh-CN" ? "来源" : "Source"}：{card.sourceRefs.map((source) => source.label).join(" · ")}</p>}</button>)}</div></div></TabsContent>
+        <TabsContent value="network" className="m-0 min-h-0 flex-1"><KnowledgeNetwork locale={locale} cards={cards} relations={relations} selected={selected} setSelected={setSelected} /></TabsContent>
+      </Tabs>}
+      <div className="shrink-0 border-t bg-white px-6 py-4"><TimedButton seconds={testMode ? 5 : 60} ready={cards.length > 0} locale={locale} label={locale === "zh-CN" ? "完成查看并进入支持后测评" : "Finish review and begin supported assessment"} blockedLabel={locale === "zh-CN" ? "本次运行缺少恢复状态" : "Recovery state is missing"} className="h-11 w-full" onClick={() => { eventLog("recovery_assessment_support_completed", { condition, minimumExposureSeconds: testMode ? 5 : 60, viewedTabs: [...viewedRef.current] }, { stage: "recovery_assessment" }); onContinue(); }} /></div>
+    </div>
+  </main>;
 }
 
 function RecoveryAcceptFloat({
@@ -690,7 +779,7 @@ function Workspace({
         timerExpiredLoggedRef.current=true;
         const stage=phase==="work"?"research_work":"recovery";
         eventLog("workspace_timer_expired",{taskId,phase,durationSeconds:WORKSPACE_DURATION_SECONDS},{stage});
-        const nextScreen: Screen=phase==="work"?"checkpoint":"complete";
+        const nextScreen: Screen=phase==="work"?(taskId==="city_policy"?"city_t1":"checkpoint"):"complete";
         if(phase==="work")onPhaseOneCaptureRef.current?.();
         eventLog("workspace_auto_advanced",{taskId,phase,nextScreen},{stage});
         setScreen(nextScreen);
@@ -936,7 +1025,7 @@ function PhaseOnePanel({locale,condition,taskId,memo,remaining,testMode,onPhaseO
         })}</div>
       </section>)}</div>
     </div>
-    <div className="shrink-0 border-t bg-white px-5 py-3"><div className="mb-2 flex justify-between text-[10px] text-muted-foreground"><span>{checkpointReady?(locale==="zh-CN"?"保存窗口已开放":"Save window open"):(locale==="zh-CN"?"最后 3 分钟开放下一步":"Next step opens in the final 3 minutes")}</span><span>{memoCount} {locale==="zh-CN"?"字":"words"} · {completed.size}/{totalCriteria} {locale==="zh-CN"?"评价点":"criteria"}</span></div><TimedButton seconds={10} ready={checkpointReady} locale={locale} label={locale==="zh-CN"?"保存推理位置并进入中断任务":"Save reasoning position and begin interruption"} blockedLabel={locale==="zh-CN"?"下一步尚未开放":"Next step is not open yet"} className="h-11 w-full text-sm" onClick={()=>{const nextScreen="checkpoint";onPhaseOneCapture?.();eventLog("phase_one_checkpoint_requested",{taskId,condition,completedGoals:completedGoalCount,completedCriteria:completed.size,totalCriteria,memoCount,remaining,nextScreen},{stage:"research_work"});setScreen(nextScreen)}} /></div>
+    <div className="shrink-0 border-t bg-white px-5 py-3"><div className="mb-2 flex justify-between text-[10px] text-muted-foreground"><span>{checkpointReady?(locale==="zh-CN"?"保存窗口已开放":"Save window open"):(locale==="zh-CN"?"最后 3 分钟开放下一步":"Next step opens in the final 3 minutes")}</span><span>{memoCount} {locale==="zh-CN"?"字":"words"} · {completed.size}/{totalCriteria} {locale==="zh-CN"?"评价点":"criteria"}</span></div><TimedButton seconds={10} ready={checkpointReady} locale={locale} label={locale==="zh-CN"?(taskId==="city_policy"?"保存推理位置并完成中断前测评":"保存推理位置并进入中断任务"):(taskId==="city_policy"?"Save reasoning state and complete the pre-interruption assessment":"Save reasoning position and begin interruption")} blockedLabel={locale==="zh-CN"?"下一步尚未开放":"Next step is not open yet"} className="h-11 w-full text-sm" onClick={()=>{const nextScreen:Screen=taskId==="city_policy"?"city_t1":"checkpoint";onPhaseOneCapture?.();eventLog("phase_one_checkpoint_requested",{taskId,condition,completedGoals:completedGoalCount,completedCriteria:completed.size,totalCriteria,memoCount,remaining,nextScreen},{stage:"research_work"});setScreen(nextScreen)}} /></div>
   </section>;
 }
 

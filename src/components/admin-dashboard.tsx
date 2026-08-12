@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { chatCounts, interruptionMetrics, taskMilestones, type AdminMetricEvent, type InterruptionMetric } from "@/lib/admin-result-metrics";
 import { answerLabel, mean, scoredSubscales, subscaleScores, surveyItems, type SurveyAnswer } from "@/lib/pre-survey-admin";
 import { researchTaskMetadata } from "@/lib/research-task";
+import { cityPolicyRecoveryMetrics, type CityPolicyAssessment, type CityPolicyProbeStage } from "@/lib/city-policy-assessment";
 
 type AnalysisStatus = "included" | "excluded" | "trashed";
 type ResultSummary = {
@@ -52,6 +53,9 @@ type ResultSummary = {
   recovery_new_material_exposed: boolean | null;
   recovery_rendered: boolean;
   recovery_tabs: string[];
+  city_policy_t2_accuracy: number | null;
+  city_policy_t3_accuracy: number | null;
+  city_policy_recovery_gain: number | null;
 };
 type ParticipantResult = Omit<ResultSummary, "memo_length" | "has_recall" | "has_problem_state" | "event_count" | "event_sequence_complete" | "initial_material_presented" | "initial_material_id" | "expected_material_count" | "material_completion_count" | "recovery_new_material_exposed" | "recovery_rendered" | "recovery_tabs"> & {
   memo: string | null;
@@ -59,6 +63,7 @@ type ParticipantResult = Omit<ResultSummary, "memo_length" | "has_recall" | "has
   problem_state: unknown;
   recall: Record<string, string> | null;
   recovery_state: unknown;
+  task_assessment: unknown;
 };
 type ResultEvent = AdminMetricEvent & { id: string; target_type?: string | null; server_timestamp?: string };
 type AccessState = "loading" | "login" | "ready" | "unavailable";
@@ -104,6 +109,7 @@ function qualityFlags(result: ResultSummary) {
   if (!result.interruption_completed) flags.push("中断任务未完成");
   if (result.status === "completed" && result.recovery_new_material_exposed === false) flags.push("恢复后新增材料未达到最低暴露");
   if (result.status === "completed" && !result.recovery_rendered) flags.push("缺少恢复渲染证据");
+  if (result.task_id === "city_policy" && result.city_policy_recovery_gain == null) flags.push("城市决策 T1/T2/T3 不完整");
   return flags;
 }
 
@@ -167,12 +173,14 @@ function StudyOutcomeOverview({ results }: { results: ResultSummary[] }) {
   const cells = [...new Set(included.map((result) => `${result.task_id}::${result.condition}`))].map(cell=>{const [taskId,condition]=cell.split("::");return {taskId,condition};});
   return <section className="mb-6 rounded-xl border bg-white p-5">
     <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-semibold">研究问题导向概览</h2><p className="mt-1 text-xs text-muted-foreground">仅作数据完整性和描述性检查；Memo 字数、对话轮次不代表任务质量。</p></div><Badge variant="outline">纳入样本 n={included.length}</Badge></div>
-    <div className="mt-4 overflow-x-auto rounded-lg border"><table className="w-full min-w-[860px] text-left text-xs"><thead className="bg-muted"><tr><th className="p-3">任务</th><th className="p-3">条件</th><th className="p-3">运行完成</th><th className="p-3">中断完成</th><th className="p-3">2-back 总体正确率</th><th className="p-3">平均 Memo 字数</th><th className="p-3">平均用户提问轮次</th></tr></thead><tbody>{cells.map(({taskId,condition}) => {
+    <div className="mt-4 overflow-x-auto rounded-lg border"><table className="w-full min-w-[980px] text-left text-xs"><thead className="bg-muted"><tr><th className="p-3">任务</th><th className="p-3">条件</th><th className="p-3">运行完成</th><th className="p-3">中断完成</th><th className="p-3">2-back 总体正确率</th><th className="p-3">城市决策恢复增益</th><th className="p-3">平均 Memo 字数</th><th className="p-3">平均用户提问轮次</th></tr></thead><tbody>{cells.map(({taskId,condition}) => {
       const rows = included.filter((result) => result.task_id === taskId && result.condition === condition);
       const completed = rows.filter((result) => result.status === "completed").length;
       const interruption = rows.filter((result) => result.interruption_completed).length;
       const letterValues = rows.map((result) => result.letter_accuracy).filter((value): value is number => value != null);
-      return <tr key={`${taskId}-${condition}`} className="border-t"><td className="p-3 font-medium">{researchTaskMetadata(taskId).label}</td><td className="p-3">{conditionLabels[condition] || condition}<span className="ml-2 text-muted-foreground">n={rows.length}</span></td><td className="p-3"><p>{completed}/{rows.length}</p><div className="mt-1 h-1.5 w-24 rounded-full bg-muted"><div className="h-full rounded-full bg-emerald-500" style={{width:`${rows.length ? completed / rows.length * 100 : 0}%`}}/></div></td><td className="p-3">{interruption}/{rows.length}</td><td className="p-3">{formatPercent(mean(letterValues))}</td><td className="p-3">{Math.round(mean(rows.map((result) => result.memo_length)) || 0)}</td><td className="p-3">{(mean(rows.map((result) => result.user_chat_turn_count)) || 0).toFixed(1)}</td></tr>;
+      const recoveryValues = rows.map((result) => result.city_policy_recovery_gain).filter((value): value is number => value != null);
+      const recoveryMean = mean(recoveryValues);
+      return <tr key={`${taskId}-${condition}`} className="border-t"><td className="p-3 font-medium">{researchTaskMetadata(taskId).label}</td><td className="p-3">{conditionLabels[condition] || condition}<span className="ml-2 text-muted-foreground">n={rows.length}</span></td><td className="p-3"><p>{completed}/{rows.length}</p><div className="mt-1 h-1.5 w-24 rounded-full bg-muted"><div className="h-full rounded-full bg-emerald-500" style={{width:`${rows.length ? completed / rows.length * 100 : 0}%`}}/></div></td><td className="p-3">{interruption}/{rows.length}</td><td className="p-3">{formatPercent(mean(letterValues))}</td><td className="p-3">{taskId !== "city_policy" || recoveryMean == null ? "—" : `${recoveryMean.toFixed(1)} pp`}<span className="ml-1 text-muted-foreground">{recoveryValues.length ? `n=${recoveryValues.length}` : ""}</span></td><td className="p-3">{Math.round(mean(rows.map((result) => result.memo_length)) || 0)}</td><td className="p-3">{(mean(rows.map((result) => result.user_chat_turn_count)) || 0).toFixed(1)}</td></tr>;
     })}</tbody></table></div>
   </section>;
 }
@@ -196,6 +204,22 @@ function problemStateView(value: unknown): ProblemStateView | null {
   return value && typeof value === "object" ? value as ProblemStateView : null;
 }
 
+const cityStageLabels: Record<CityPolicyProbeStage, string> = { t1: "T1 中断前", t2: "T2 无辅助", t3: "T3 支持后" };
+const cityCriterionLabels: Record<string, string> = { cost: "成本", equity: "公平性", implementation: "执行难度", environment: "环境收益", acceptance: "居民接受度" };
+
+function CityPolicyAssessmentPanel({ value }: { value: unknown }) {
+  const assessment = value && typeof value === "object" ? value as CityPolicyAssessment : null;
+  const metrics = cityPolicyRecoveryMetrics(assessment);
+  const stages: CityPolicyProbeStage[] = ["t1", "t2", "t3"];
+  if (!assessment) return <section><h3 className="text-sm font-semibold">城市决策恢复测评</h3><p className="mt-3 rounded-lg bg-muted/40 p-4 text-sm text-muted-foreground">没有保存任务专属测评。</p></section>;
+  return <section className="space-y-4">
+    <div><h3 className="text-sm font-semibold">城市决策恢复测评</h3><p className="mt-1 text-[11px] leading-5 text-muted-foreground">以 T1 排序为个人基线；一致性按所有两两排序关系计算。主要指标为 T3 支持后准确度减去 T2 无辅助准确度。</p></div>
+    <div className="grid grid-cols-3 gap-3"><MetricTile label="T2 状态准确度" value={metrics ? `${metrics.t2StateAccuracy.toFixed(1)}%` : "—"} detail="方案与标准排序均值"/><MetricTile label="T3 状态准确度" value={metrics?.t3StateAccuracy == null ? "—" : `${metrics.t3StateAccuracy.toFixed(1)}%`} detail="支持后对 T1 的一致性"/><MetricTile label="恢复增益" value={metrics?.recoveryGain == null ? "—" : `${metrics.recoveryGain >= 0 ? "+" : ""}${metrics.recoveryGain.toFixed(1)} pp`} detail="T3 − T2，越高越好"/></div>
+    <div className="overflow-x-auto rounded-xl border"><table className="w-full min-w-[760px] text-left text-xs"><thead className="bg-muted"><tr><th className="p-3">测量点</th><th className="p-3">方案排序</th><th className="p-3">标准排序</th><th className="p-3">信心</th><th className="p-3">首选理由 / 最大不确定性</th></tr></thead><tbody>{stages.map((stage) => { const probe = assessment.probes?.[stage]; return <tr key={stage} className="border-t align-top"><td className="p-3 font-medium">{cityStageLabels[stage]}</td><td className="p-3 font-mono">{probe?.optionRanking?.join(" > ") || "—"}</td><td className="p-3">{probe?.criterionRanking?.map((criterion) => cityCriterionLabels[criterion] || criterion).join(" > ") || "—"}</td><td className="p-3">{probe ? `${probe.confidence}/5` : "—"}</td><td className="max-w-sm p-3"><p>{probe?.topChoiceReason || "—"}</p>{probe?.decisionChangingUncertainty && <p className="mt-2 text-amber-700">不确定性：{probe.decisionChangingUncertainty}</p>}</td></tr>; })}</tbody></table></div>
+    {metrics && <div className="grid gap-2 sm:grid-cols-2"><div className="rounded-lg border p-3 text-xs"><span className="text-muted-foreground">方案排序一致性</span><p className="mt-1 font-medium">T2 {metrics.t2OptionAgreement.toFixed(1)}% → T3 {metrics.t3OptionAgreement == null ? "—" : `${metrics.t3OptionAgreement.toFixed(1)}%`}</p></div><div className="rounded-lg border p-3 text-xs"><span className="text-muted-foreground">标准排序一致性</span><p className="mt-1 font-medium">T2 {metrics.t2CriterionAgreement.toFixed(1)}% → T3 {metrics.t3CriterionAgreement == null ? "—" : `${metrics.t3CriterionAgreement.toFixed(1)}%`}</p></div></div>}
+  </section>;
+}
+
 function TaskOutcomePanel({ detail, events }: { detail: ParticipantResult; events: ResultEvent[] }) {
   const milestones = taskMilestones(events, detail.status);
   const completed = milestones.filter((milestone) => milestone.complete).length;
@@ -203,6 +227,7 @@ function TaskOutcomePanel({ detail, events }: { detail: ParticipantResult; event
   const problemState = problemStateView(detail.problem_state);
   const cards = Array.isArray(problemState?.cards) ? problemState.cards : [];
   return <div className="space-y-6">
+    {detail.task_id === "city_policy" && <CityPolicyAssessmentPanel value={detail.task_assessment} />}
     <section><div className="flex items-end justify-between"><div><h3 className="text-sm font-semibold">任务流程完成证据</h3><p className="mt-1 text-xs text-muted-foreground">判断记录是否覆盖实验流程，不等同于任务质量评分。</p></div><span className="font-mono text-sm">{completed}/{milestones.length}</span></div><div className="mt-3 grid gap-2 sm:grid-cols-2">{milestones.map((milestone) => <div key={milestone.label} className={`flex items-start gap-2 rounded-lg border p-3 text-xs ${milestone.complete ? "border-emerald-200 bg-emerald-50" : "bg-muted/30"}`}>{milestone.complete ? <CheckCircle className="mt-0.5 shrink-0 text-emerald-600"/> : <WarningCircle className="mt-0.5 shrink-0 text-amber-600"/>}<div><p className="font-medium">{milestone.label}</p><p className="mt-1 font-mono text-[9px] text-muted-foreground">{milestone.evidence}</p></div></div>)}</div></section>
     <section><div className="flex items-center justify-between"><h3 className="text-sm font-semibold">最终 Memo</h3><Badge variant="outline">{detail.memo?.trim().length || 0} 字符</Badge></div><div className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap rounded-lg bg-muted/45 p-4 text-xs leading-6">{detail.memo || "尚未保存"}</div><p className="mt-2 text-[11px] text-muted-foreground">字数只用于检查是否形成产出；清晰度、证据质量和实验可行性仍需盲评编码。</p></section>
     <section><h3 className="text-sm font-semibold">无辅助回忆回答</h3><div className="mt-3 space-y-3">{Object.entries(recallLabels).map(([key,label]) => <article key={key} className="rounded-lg border p-3"><p className="text-xs font-medium">{label}</p><p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-muted-foreground">{detail.recall?.[key] || "未作答"}</p></article>)}</div><p className="mt-2 text-[11px] text-muted-foreground">后台仅呈现原始回答；Goal、Hypothesis、Constraint 等 0–2 分编码仍需按预注册 rubric 由独立编码员完成。</p></section>

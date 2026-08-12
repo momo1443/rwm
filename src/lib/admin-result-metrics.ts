@@ -59,14 +59,21 @@ export function taskMilestones(events: AdminMetricEvent[], status: "started" | "
     .filter(Boolean));
   const taskId = events.find((event) => typeof event.payload?.taskId === "string")?.payload?.taskId;
   const expectedMaterials = taskId === "city_policy" ? 5 : taskId === "ai_course_policy" || taskId === "night_transit" ? 6 : 5;
+  const cityProbe = (stage: "t1" | "t2" | "t3") => events.some((event) => event.event_type === "city_policy_probe_submitted" && event.payload?.stage === stage);
   return [
     { label: "同意并建立运行", complete: has("consent_submitted"), evidence: "consent_submitted" },
     { label: "完成前测", complete: has("pre_survey_completed"), evidence: "pre_survey_completed" },
     { label: "确认任务说明", complete: has("task_brief_confirmed"), evidence: "task_brief_confirmed" },
     { label: "完成第一阶段材料最低暴露", complete: materialIds.size >= expectedMaterials, evidence: `${materialIds.size}/${expectedMaterials} materials` },
     { label: "结束第一阶段工作", complete: has("phase_one_checkpoint_requested", "phase_one_control_completed"), evidence: "phase-one exit" },
+    ...(taskId === "city_policy" ? [{ label: "提交城市决策 T1", complete: cityProbe("t1"), evidence: "city_policy_probe_submitted:t1" }] : []),
     { label: "完成中断任务", complete: has("interruption_completed"), evidence: "interruption_completed" },
     { label: "提交无辅助回忆", complete: has("unsupported_recall_submitted"), evidence: "unsupported_recall_submitted" },
+    ...(taskId === "city_policy" ? [
+      { label: "提交城市决策 T2", complete: cityProbe("t2"), evidence: "city_policy_probe_submitted:t2" },
+      { label: "查看条件恢复支持", complete: has("recovery_assessment_support_completed"), evidence: "recovery_assessment_support_completed" },
+      { label: "提交城市决策 T3", complete: cityProbe("t3"), evidence: "city_policy_probe_submitted:t3" },
+    ] : []),
     { label: "进入恢复阶段", complete: has("recovery_support_rendered", "recovery_support_revealed"), evidence: "recovery support" },
     { label: "提交最终任务", complete: status === "completed" || has("end_study_clicked"), evidence: status },
   ];

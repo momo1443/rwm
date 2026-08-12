@@ -6,6 +6,7 @@ import { chatCounts, interruptionMetrics, taskMilestones } from "@/lib/admin-res
 import { ADMIN_COOKIE, getResearcherAuthConfig } from "@/lib/results-server";
 import { verifySignedToken } from "@/lib/signed-token";
 import { getResearchTask, isResearchTaskId, researchTaskMetadata } from "@/lib/research-task";
+import { cityPolicyRecoveryMetrics, type CityPolicyAssessment } from "@/lib/city-policy-assessment";
 
 async function isAuthorized(request: NextRequest) {
   const config = getResearcherAuthConfig();
@@ -77,7 +78,7 @@ export async function GET(request: NextRequest) {
         : database.results;
       const sessionIds = new Set(results.map((result) => result.session_id));
       return NextResponse.json({
-        schemaVersion: "rmw-research-results-v8",
+        schemaVersion: "rmw-research-results-v9-city-policy-recovery",
         storageMode: resultStorageMode(),
         exportedAt: new Date().toISOString(),
         exportMode: exportMode === "analysis" ? "analysis-ready" : "all-raw",
@@ -110,6 +111,7 @@ export async function GET(request: NextRequest) {
         const conversation = chatCounts(Array.isArray(result.chat) ? result.chat as Array<{ role: "user" | "assistant"; text: string }> : null);
         const milestones = taskMilestones(sessionEvents, result.status);
         const taskMetadata = researchTaskMetadata(result.task_id);
+        const cityMetrics = result.task_id === "city_policy" ? cityPolicyRecoveryMetrics(result.task_assessment as CityPolicyAssessment | null) : null;
         const phaseOneMaterialCompletionIds = new Set(sessionEvents.filter((event) => event.event_type === "material_exposure_completed" && event.stage === "research_work").map((event) => event.target_id).filter(Boolean));
         const recoveryTabs = [...new Set(sessionEvents.filter((event) => event.event_type === "recovery_tab_viewed").map((event) => event.target_id).filter((value): value is string => Boolean(value)))];
         return {
@@ -151,6 +153,9 @@ export async function GET(request: NextRequest) {
         recovery_new_material_exposed: taskMetadata.recoveryMaterialId === null ? null : sessionEvents.some((event) => event.event_type === "material_exposure_completed" && event.stage === "recovery" && event.target_id === taskMetadata.recoveryMaterialId),
         recovery_rendered: sessionEvents.some((event) => event.event_type === "recovery_support_rendered"),
         recovery_tabs: recoveryTabs,
+        city_policy_t2_accuracy: cityMetrics?.t2StateAccuracy ?? null,
+        city_policy_t3_accuracy: cityMetrics?.t3StateAccuracy ?? null,
+        city_policy_recovery_gain: cityMetrics?.recoveryGain ?? null,
       };})
       .sort((left, right) => right.created_at.localeCompare(left.created_at));
     return NextResponse.json({ mode: resultStorageMode(), results });

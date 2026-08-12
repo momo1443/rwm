@@ -17,6 +17,7 @@ type Snapshot = {
   problemState?: ProblemStateSnapshot | null;
   recall?: Record<string, string>;
   recoveryState?: unknown;
+  taskAssessment?: unknown;
 };
 
 let flushQueue = Promise.resolve();
@@ -123,7 +124,7 @@ export function saveRemoteStudySnapshot(input: Snapshot) {
   void queueFlush(sessionId);
 }
 
-export function completeRemoteStudy(input: Pick<Snapshot, "memo" | "chat" | "problemState">) {
+export function completeRemoteStudy(input: Pick<Snapshot, "memo" | "chat" | "problemState" | "taskAssessment">) {
   if (typeof window === "undefined") return;
   const sessionId = activeSessionId();
   if (!sessionId) return;

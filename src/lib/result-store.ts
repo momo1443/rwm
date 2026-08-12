@@ -20,6 +20,7 @@ export type ParticipantResultRow = {
   problem_state: unknown;
   recall: Record<string, string> | null;
   recovery_state: unknown;
+  task_assessment: unknown;
   analysis_status: AnalysisStatus;
   exclusion_reason: string | null;
   review_note: string | null;
@@ -48,7 +49,7 @@ export type ResultEventRow = {
 
 export type ResultDatabase = { results: ParticipantResultRow[]; events: ResultEventRow[] };
 export type ResultEventInput = Omit<ResultEventRow, "session_id" | "participant_code" | "server_timestamp">;
-export type ResultUpdate = Partial<Pick<ParticipantResultRow, "pre_survey" | "phase_one_memo" | "phase_one_chat" | "phase_one_captured_at" | "memo" | "chat" | "problem_state" | "recall" | "recovery_state">>;
+export type ResultUpdate = Partial<Pick<ParticipantResultRow, "pre_survey" | "phase_one_memo" | "phase_one_chat" | "phase_one_captured_at" | "memo" | "chat" | "problem_state" | "recall" | "recovery_state" | "task_assessment">>;
 export type ReviewUpdate = {
   analysisStatus: AnalysisStatus;
   exclusionReason: string | null;
@@ -159,6 +160,7 @@ export async function createParticipant(input: { sessionId: string; participantC
     problem_state: null,
     recall: null,
     recovery_state: null,
+    task_assessment: null,
     analysis_status: "included",
     exclusion_reason: null,
     review_note: null,
@@ -184,6 +186,7 @@ export async function createParticipant(input: { sessionId: string; participantC
   delete supabaseRow.blind_review_scores;
   delete supabaseRow.blind_review_note;
   delete supabaseRow.blind_reviewed_at;
+  delete supabaseRow.task_assessment;
   await supabaseRequest("participant_results", { method: "POST", headers: { prefer: "return=minimal" }, body: JSON.stringify(supabaseRow) });
 }
 
