@@ -32,6 +32,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { eventLog, readProblemStateActions } from "@/lib/event-log";
 import type { ResearchTaskId } from "@/lib/research-task";
 import type {
+  Condition,
   EpistemicStatus,
   Locale,
   ProblemStateCard,
