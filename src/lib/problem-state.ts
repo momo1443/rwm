@@ -54,6 +54,12 @@ export function toCardRelations(snapshot: ProblemStateSnapshot): CardRelation[] 
   }));
 }
 
+export function problemStateToContinuousSummary(cards: ProblemStateCard[], locale: Locale) {
+  return cards
+    .map((card) => `${card.content[locale]}。${card.detail[locale]}`)
+    .join("\n\n");
+}
+
 export function readProblemStateSnapshot(): ProblemStateSnapshot | null {
   if (typeof window === "undefined") return null;
   try {

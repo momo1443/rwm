@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import { randomInt } from "node:crypto";
 import { z } from "zod";
-import { createParticipant, findSession, resultStorageMode, saveResultEvent, updateParticipant } from "@/lib/result-store";
+import { createParticipant, findSession, readAllResults, resultStorageMode, saveResultEvent, updateParticipant } from "@/lib/result-store";
 import { getParticipantSessionSecret } from "@/lib/results-server";
 import { createSignedToken, verifySignedToken } from "@/lib/signed-token";
 import { researchTaskIds } from "@/lib/research-task";
@@ -17,11 +18,46 @@ const cityPolicyProbeSchema = z.object({
   confidence: z.number().int().min(1).max(5),
   submittedAt: z.string().datetime(),
 }).strict();
-const taskAssessmentSchema = z.object({
+const legacyCityPolicyAssessmentSchema = z.object({
   version: z.literal("city-policy-recovery-v1"),
   taskId: z.literal("city_policy"),
   probes: z.object({ t1: cityPolicyProbeSchema.optional(), t2: cityPolicyProbeSchema.optional(), t3: cityPolicyProbeSchema.optional() }).strict(),
 }).strict();
+const reasoningAnswersSchema = z.object({
+  goal: z.string().trim().min(2).max(4000),
+  position: z.string().trim().min(2).max(4000),
+  constraint: z.string().trim().min(2).max(4000),
+  rejectedPath: z.string().trim().min(2).max(4000),
+  uncertainty: z.string().trim().min(2).max(4000),
+  nextAction: z.string().trim().min(2).max(4000),
+}).strict();
+const recoveryProbeSchema = z.object({
+  reasoning: reasoningAnswersSchema,
+  content: z.array(z.string().trim().min(1).max(2000)).max(6),
+  form: z.enum(["A", "B"]),
+  submittedAt: z.string().datetime(),
+}).strict();
+const recoveryAssessmentSchema = z.object({
+  version: z.literal("reasoning-recovery-v2"),
+  taskId: z.enum(researchTaskIds),
+  formOrder: z.enum(["AB", "BA"]),
+  probes: z.object({ t1: recoveryProbeSchema.optional(), t2: recoveryProbeSchema.optional(), t3: recoveryProbeSchema.optional() }).strict(),
+  participantNotes: z.string().trim().min(30).max(10000).optional(),
+  readiness: z.object({
+    supportRenderedAt: z.string().datetime(),
+    readyAt: z.string().datetime(),
+    latencyMs: z.number().int().nonnegative().max(60 * 60 * 1000),
+    viewedSections: z.array(z.string().min(1).max(100)).max(20),
+  }).strict().optional(),
+  postSurvey: z.object({
+    continuity: z.number().int().min(1).max(7),
+    mentalDemand: z.number().int().min(1).max(7),
+    confidence: z.number().int().min(1).max(7),
+    agency: z.number().int().min(1).max(7),
+    supportSufficiency: z.number().int().min(1).max(7),
+  }).strict().optional(),
+}).strict();
+const taskAssessmentSchema = z.union([legacyCityPolicyAssessmentSchema, recoveryAssessmentSchema]);
 const snapshotSchema = z.object({
   preSurvey: z.record(z.string(), z.number().int().min(1).max(5)).optional(),
   phaseOneMemo: z.string().max(20000).optional(),
@@ -53,6 +89,7 @@ const requestSchema = z.discriminatedUnion("action", [
     locale: z.enum(["zh-CN", "en"]),
     condition: z.enum(["rmw", "rmw_no_summary", "summary_only"]),
     taskId: z.enum(researchTaskIds),
+    assignmentMode: z.enum(["auto", "manual"]).default("auto"),
     token: z.string().min(1).max(2000).optional(),
   }),
   z.object({ action: z.literal("event"), token: z.string().min(1).max(2000), event: eventSchema }),
@@ -65,6 +102,31 @@ async function participantFromToken(token: string, secret: string) {
   if (payload?.scope !== "participant" || typeof payload.participantCode !== "string" || typeof payload.sessionId !== "string") return null;
   if (!participantCodeSchema.safeParse(payload.participantCode).success || !sessionIdSchema.safeParse(payload.sessionId).success) return null;
   return { participantCode: payload.participantCode, sessionId: payload.sessionId };
+}
+
+const activeConditions = ["rmw", "rmw_no_summary", "summary_only"] as const;
+
+async function balancedAssignment() {
+  const database = await readAllResults();
+  const activeCutoff = Date.now() - 12 * 60 * 60 * 1000;
+  const activeRows = database.results.filter((result) => {
+    if (result.analysis_status === "trashed") return false;
+    const isCurrentCompletedCohort = result.status === "completed"
+      && result.task_assessment
+      && typeof result.task_assessment === "object"
+      && "version" in result.task_assessment
+      && result.task_assessment.version === "reasoning-recovery-v2";
+    const isCurrentActiveRun = result.status === "started" && new Date(result.created_at).getTime() >= activeCutoff;
+    return Boolean(isCurrentCompletedCohort || isCurrentActiveRun);
+  });
+  const cells = researchTaskIds.flatMap((taskId) => activeConditions.map((condition) => ({ taskId, condition })));
+  const counts = cells.map((cell) => ({
+    ...cell,
+    count: activeRows.filter((row) => row.task_id === cell.taskId && row.condition === cell.condition).length,
+  }));
+  const minimum = Math.min(...counts.map((cell) => cell.count));
+  const leastFilled = counts.filter((cell) => cell.count === minimum);
+  return leastFilled[randomInt(leastFilled.length)];
 }
 
 export async function POST(request: Request) {
@@ -80,14 +142,23 @@ export async function POST(request: Request) {
 
   try {
     if (parsed.data.action === "start") {
-      const { sessionId, participantCode, locale, condition, taskId, token: resumeToken } = parsed.data;
+      const { sessionId, participantCode, locale, assignmentMode, token: resumeToken } = parsed.data;
       const existing = await findSession(sessionId);
+      let condition = parsed.data.condition;
+      let taskId = parsed.data.taskId;
       if (existing) {
         const resumedSession = resumeToken ? await participantFromToken(resumeToken, sessionSecret) : null;
         if (resumedSession?.sessionId !== sessionId || resumedSession.participantCode !== participantCode) {
           return NextResponse.json({ error: "Study session is already in use" }, { status: 409 });
         }
+        condition = existing.condition as typeof condition;
+        taskId = existing.task_id as typeof taskId;
       } else {
+        if (assignmentMode === "auto") {
+          const assigned = await balancedAssignment();
+          condition = assigned.condition;
+          taskId = assigned.taskId;
+        }
         await createParticipant({ sessionId, participantCode, locale, condition, taskId });
       }
       const token = await createSignedToken({
@@ -96,7 +167,7 @@ export async function POST(request: Request) {
         sessionId,
         exp: Date.now() + 12 * 60 * 60 * 1000,
       }, sessionSecret);
-      return NextResponse.json({ mode: storageMode, token, sessionId });
+      return NextResponse.json({ mode: storageMode, token, sessionId, condition, taskId, assignmentMode });
     }
 
     const session = await participantFromToken(parsed.data.token, sessionSecret);

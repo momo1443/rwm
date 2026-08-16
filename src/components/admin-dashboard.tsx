@@ -12,6 +12,7 @@ import { chatCounts, interruptionMetrics, taskMilestones, type AdminMetricEvent,
 import { answerLabel, mean, scoredSubscales, subscaleScores, surveyItems, type SurveyAnswer } from "@/lib/pre-survey-admin";
 import { researchTaskMetadata } from "@/lib/research-task";
 import { cityPolicyRecoveryMetrics, type CityPolicyAssessment, type CityPolicyProbeStage } from "@/lib/city-policy-assessment";
+import { reasoningRecallDimensions, type RecoveryAssessment, type RecoveryProbeStage } from "@/lib/recovery-assessment";
 
 type AnalysisStatus = "included" | "excluded" | "trashed";
 type ResultSummary = {
@@ -53,6 +54,13 @@ type ResultSummary = {
   recovery_new_material_exposed: boolean | null;
   recovery_rendered: boolean;
   recovery_tabs: string[];
+  assessment_version: string | null;
+  recovery_probe_count: number;
+  recovery_probe_complete: boolean;
+  content_probe_complete: boolean;
+  recovery_readiness_seconds: number | null;
+  participant_notes_present: boolean;
+  post_survey_complete: boolean;
   city_policy_t2_accuracy: number | null;
   city_policy_t3_accuracy: number | null;
   city_policy_recovery_gain: number | null;
@@ -102,14 +110,18 @@ function qualityFlags(result: ResultSummary) {
   if (!result.pre_survey || Object.keys(result.pre_survey).length < surveyItems.length) flags.push("前测缺失");
   if (result.memo_length < 600) flags.push("Memo 较短");
   if (!result.has_recall) flags.push("无回忆数据");
-  if (!result.has_problem_state) flags.push("无 Problem State");
+  if (result.condition !== "rmw_no_summary" && !result.has_problem_state) flags.push("无 Problem State");
   if (!result.event_sequence_complete) flags.push("事件序列不完整");
   if (!result.initial_material_presented) flags.push(`缺少 ${result.initial_material_id} 首次呈现`);
   if (result.material_completion_count < result.expected_material_count) flags.push(`第一阶段材料暴露 ${result.material_completion_count}/${result.expected_material_count}`);
   if (!result.interruption_completed) flags.push("中断任务未完成");
   if (result.status === "completed" && result.recovery_new_material_exposed === false) flags.push("恢复后新增材料未达到最低暴露");
   if (result.status === "completed" && !result.recovery_rendered) flags.push("缺少恢复渲染证据");
-  if (result.task_id === "city_policy" && result.city_policy_recovery_gain == null) flags.push("城市决策 T1/T2/T3 不完整");
+  if (result.assessment_version === "reasoning-recovery-v2" && !result.recovery_probe_complete) flags.push(`T1/T2/T3 仅 ${result.recovery_probe_count}/3`);
+  if (result.assessment_version === "reasoning-recovery-v2" && !result.content_probe_complete) flags.push("事实回忆 A/B 不完整");
+  if (result.assessment_version === "reasoning-recovery-v2" && result.recovery_readiness_seconds == null) flags.push("缺少恢复就绪时间");
+  if (result.assessment_version === "reasoning-recovery-v2" && result.condition === "rmw_no_summary" && !result.participant_notes_present) flags.push("缺少用户自主笔记");
+  if (result.assessment_version === "reasoning-recovery-v2" && !result.post_survey_complete) flags.push("缺少恢复体验问卷");
   return flags;
 }
 
@@ -173,14 +185,16 @@ function StudyOutcomeOverview({ results }: { results: ResultSummary[] }) {
   const cells = [...new Set(included.map((result) => `${result.task_id}::${result.condition}`))].map(cell=>{const [taskId,condition]=cell.split("::");return {taskId,condition};});
   return <section className="mb-6 rounded-xl border bg-white p-5">
     <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-semibold">研究问题导向概览</h2><p className="mt-1 text-xs text-muted-foreground">仅作数据完整性和描述性检查；Memo 字数、对话轮次不代表任务质量。</p></div><Badge variant="outline">纳入样本 n={included.length}</Badge></div>
-    <div className="mt-4 overflow-x-auto rounded-lg border"><table className="w-full min-w-[980px] text-left text-xs"><thead className="bg-muted"><tr><th className="p-3">任务</th><th className="p-3">条件</th><th className="p-3">运行完成</th><th className="p-3">中断完成</th><th className="p-3">2-back 总体正确率</th><th className="p-3">城市决策恢复增益</th><th className="p-3">平均 Memo 字数</th><th className="p-3">平均用户提问轮次</th></tr></thead><tbody>{cells.map(({taskId,condition}) => {
+    <div className="mt-4 overflow-x-auto rounded-lg border"><table className="w-full min-w-[1120px] text-left text-xs"><thead className="bg-muted"><tr><th className="p-3">任务</th><th className="p-3">条件</th><th className="p-3">运行完成</th><th className="p-3">中断完成</th><th className="p-3">2-back 总体正确率</th><th className="p-3">三次恢复测量完整</th><th className="p-3">平均支持就绪时间</th><th className="p-3">旧版城市恢复增益</th><th className="p-3">平均 Memo 字数</th><th className="p-3">平均用户提问轮次</th></tr></thead><tbody>{cells.map(({taskId,condition}) => {
       const rows = included.filter((result) => result.task_id === taskId && result.condition === condition);
       const completed = rows.filter((result) => result.status === "completed").length;
       const interruption = rows.filter((result) => result.interruption_completed).length;
       const letterValues = rows.map((result) => result.letter_accuracy).filter((value): value is number => value != null);
       const recoveryValues = rows.map((result) => result.city_policy_recovery_gain).filter((value): value is number => value != null);
       const recoveryMean = mean(recoveryValues);
-      return <tr key={`${taskId}-${condition}`} className="border-t"><td className="p-3 font-medium">{researchTaskMetadata(taskId).label}</td><td className="p-3">{conditionLabels[condition] || condition}<span className="ml-2 text-muted-foreground">n={rows.length}</span></td><td className="p-3"><p>{completed}/{rows.length}</p><div className="mt-1 h-1.5 w-24 rounded-full bg-muted"><div className="h-full rounded-full bg-emerald-500" style={{width:`${rows.length ? completed / rows.length * 100 : 0}%`}}/></div></td><td className="p-3">{interruption}/{rows.length}</td><td className="p-3">{formatPercent(mean(letterValues))}</td><td className="p-3">{taskId !== "city_policy" || recoveryMean == null ? "—" : `${recoveryMean.toFixed(1)} pp`}<span className="ml-1 text-muted-foreground">{recoveryValues.length ? `n=${recoveryValues.length}` : ""}</span></td><td className="p-3">{Math.round(mean(rows.map((result) => result.memo_length)) || 0)}</td><td className="p-3">{(mean(rows.map((result) => result.user_chat_turn_count)) || 0).toFixed(1)}</td></tr>;
+      const probeRows = rows.filter((result) => result.assessment_version === "reasoning-recovery-v2");
+      const readinessValues = probeRows.map((result) => result.recovery_readiness_seconds).filter((value): value is number => value != null);
+      return <tr key={`${taskId}-${condition}`} className="border-t"><td className="p-3 font-medium">{researchTaskMetadata(taskId).label}</td><td className="p-3">{conditionLabels[condition] || condition}<span className="ml-2 text-muted-foreground">n={rows.length}</span></td><td className="p-3"><p>{completed}/{rows.length}</p><div className="mt-1 h-1.5 w-24 rounded-full bg-muted"><div className="h-full rounded-full bg-emerald-500" style={{width:`${rows.length ? completed / rows.length * 100 : 0}%`}}/></div></td><td className="p-3">{interruption}/{rows.length}</td><td className="p-3">{formatPercent(mean(letterValues))}</td><td className="p-3">{probeRows.filter((result) => result.recovery_probe_complete).length}/{probeRows.length || "—"}</td><td className="p-3">{readinessValues.length ? `${(mean(readinessValues) || 0).toFixed(1)} 秒` : "—"}<span className="ml-1 text-muted-foreground">{readinessValues.length ? `n=${readinessValues.length}` : ""}</span></td><td className="p-3">{taskId !== "city_policy" || recoveryMean == null ? "—" : `${recoveryMean.toFixed(1)} pp`}<span className="ml-1 text-muted-foreground">{recoveryValues.length ? `n=${recoveryValues.length}` : ""}</span></td><td className="p-3">{Math.round(mean(rows.map((result) => result.memo_length)) || 0)}</td><td className="p-3">{(mean(rows.map((result) => result.user_chat_turn_count)) || 0).toFixed(1)}</td></tr>;
     })}</tbody></table></div>
   </section>;
 }
@@ -208,7 +222,7 @@ const cityStageLabels: Record<CityPolicyProbeStage, string> = { t1: "T1 中断�
 const cityCriterionLabels: Record<string, string> = { cost: "成本", equity: "公平性", implementation: "执行难度", environment: "环境收益", acceptance: "居民接受度" };
 
 function CityPolicyAssessmentPanel({ value }: { value: unknown }) {
-  const assessment = value && typeof value === "object" ? value as CityPolicyAssessment : null;
+  const assessment = value && typeof value === "object" && "version" in value && value.version === "city-policy-recovery-v1" ? value as CityPolicyAssessment : null;
   const metrics = cityPolicyRecoveryMetrics(assessment);
   const stages: CityPolicyProbeStage[] = ["t1", "t2", "t3"];
   if (!assessment) return <section><h3 className="text-sm font-semibold">城市决策恢复测评</h3><p className="mt-3 rounded-lg bg-muted/40 p-4 text-sm text-muted-foreground">没有保存任务专属测评。</p></section>;
@@ -220,14 +234,39 @@ function CityPolicyAssessmentPanel({ value }: { value: unknown }) {
   </section>;
 }
 
+const recoveryStageLabels: Record<RecoveryProbeStage, string> = { t1: "T1 中断前基线", t2: "T2 中断后无辅助", t3: "T3 支持后" };
+const reasoningDimensionLabels: Record<(typeof reasoningRecallDimensions)[number], string> = {
+  goal: "当前目标",
+  position: "推理位置",
+  constraint: "关键约束",
+  rejectedPath: "已排除路径",
+  uncertainty: "未解决问题",
+  nextAction: "下一步行动",
+};
+
+function RecoveryAssessmentPanel({ value }: { value: unknown }) {
+  const assessment = value && typeof value === "object" && "version" in value && value.version === "reasoning-recovery-v2" ? value as RecoveryAssessment : null;
+  if (!assessment) return null;
+  const stages: RecoveryProbeStage[] = ["t1", "t2", "t3"];
+  return <section className="space-y-4">
+    <div><h3 className="text-sm font-semibold">跨任务推理恢复测量</h3><p className="mt-1 text-[11px] leading-5 text-muted-foreground">T1 与 T2 使用交叉平衡的事实题 A/B；T1、T2、T3 均记录六个推理维度。原始文本需由不知道实验条件的编码员按预注册 rubric 评分。</p></div>
+    <div className="grid gap-3 sm:grid-cols-3"><MetricTile label="测量完整度" value={`${stages.filter((stage) => assessment.probes[stage]).length}/3`} detail="T1、T2、T3"/><MetricTile label="支持就绪时间" value={assessment.readiness ? `${(assessment.readiness.latencyMs / 1000).toFixed(1)} 秒` : "—"} detail="支持呈现到主动继续"/><MetricTile label="事实题顺序" value={assessment.formOrder} detail="T1/T2 交叉平衡"/></div>
+    {assessment.postSurvey && <div className="grid gap-3 sm:grid-cols-5"><MetricTile label="思路连续性" value={`${assessment.postSurvey.continuity}/7`} detail="越高越好"/><MetricTile label="脑力负荷" value={`${assessment.postSurvey.mentalDemand}/7`} detail="越低越好"/><MetricTile label="恢复信心" value={`${assessment.postSurvey.confidence}/7`} detail="越高越好"/><MetricTile label="主观能动性" value={`${assessment.postSurvey.agency}/7`} detail="越高越好"/><MetricTile label="信息充分性" value={`${assessment.postSurvey.supportSufficiency}/7`} detail="越高越好"/></div>}
+    {assessment.participantNotes && <article className="rounded-lg border p-4"><p className="text-xs font-medium">参与者中断前自主笔记</p><p className="mt-2 whitespace-pre-wrap text-xs leading-6 text-muted-foreground">{assessment.participantNotes}</p></article>}
+    <div className="space-y-3">{stages.map((stage) => { const probe = assessment.probes[stage]; return <article key={stage} className="rounded-xl border p-4"><div className="flex items-center justify-between"><h4 className="text-sm font-semibold">{recoveryStageLabels[stage]}</h4><Badge variant="outline">Form {probe?.form || "—"}</Badge></div>{probe ? <><div className="mt-3 grid gap-2 sm:grid-cols-2">{reasoningRecallDimensions.map((dimension) => <div key={dimension} className="rounded-lg bg-muted/35 p-3"><p className="text-[10px] font-medium text-muted-foreground">{reasoningDimensionLabels[dimension]}</p><p className="mt-1 whitespace-pre-wrap text-xs leading-5">{probe.reasoning[dimension]}</p></div>)}</div>{probe.content.length > 0 && <div className="mt-3"><p className="text-[10px] font-medium text-muted-foreground">事实回忆原始回答（{probe.content.length}/6）</p><ol className="mt-2 space-y-2">{probe.content.map((answer, index) => <li key={index} className="rounded-lg bg-blue-50/60 p-3 text-xs leading-5"><span className="mr-2 font-mono text-blue-700">{index + 1}.</span>{answer}</li>)}</ol></div>}</> : <p className="mt-3 text-xs text-muted-foreground">未保存该测量点。</p>}</article>; })}</div>
+  </section>;
+}
+
 function TaskOutcomePanel({ detail, events }: { detail: ParticipantResult; events: ResultEvent[] }) {
   const milestones = taskMilestones(events, detail.status);
   const completed = milestones.filter((milestone) => milestone.complete).length;
   const recallLabels: Record<string, string> = { currentGoal: "当前研究目标", position: "中断前的推理位置", uncertain: "仍不确定的问题" };
   const problemState = problemStateView(detail.problem_state);
   const cards = Array.isArray(problemState?.cards) ? problemState.cards : [];
+  const assessmentVersion = detail.task_assessment && typeof detail.task_assessment === "object" && "version" in detail.task_assessment ? detail.task_assessment.version : null;
   return <div className="space-y-6">
-    {detail.task_id === "city_policy" && <CityPolicyAssessmentPanel value={detail.task_assessment} />}
+    {assessmentVersion === "reasoning-recovery-v2" && <RecoveryAssessmentPanel value={detail.task_assessment} />}
+    {assessmentVersion === "city-policy-recovery-v1" && <CityPolicyAssessmentPanel value={detail.task_assessment} />}
     <section><div className="flex items-end justify-between"><div><h3 className="text-sm font-semibold">任务流程完成证据</h3><p className="mt-1 text-xs text-muted-foreground">判断记录是否覆盖实验流程，不等同于任务质量评分。</p></div><span className="font-mono text-sm">{completed}/{milestones.length}</span></div><div className="mt-3 grid gap-2 sm:grid-cols-2">{milestones.map((milestone) => <div key={milestone.label} className={`flex items-start gap-2 rounded-lg border p-3 text-xs ${milestone.complete ? "border-emerald-200 bg-emerald-50" : "bg-muted/30"}`}>{milestone.complete ? <CheckCircle className="mt-0.5 shrink-0 text-emerald-600"/> : <WarningCircle className="mt-0.5 shrink-0 text-amber-600"/>}<div><p className="font-medium">{milestone.label}</p><p className="mt-1 font-mono text-[9px] text-muted-foreground">{milestone.evidence}</p></div></div>)}</div></section>
     <section><div className="flex items-center justify-between"><h3 className="text-sm font-semibold">最终 Memo</h3><Badge variant="outline">{detail.memo?.trim().length || 0} 字符</Badge></div><div className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap rounded-lg bg-muted/45 p-4 text-xs leading-6">{detail.memo || "尚未保存"}</div><p className="mt-2 text-[11px] text-muted-foreground">字数只用于检查是否形成产出；清晰度、证据质量和实验可行性仍需盲评编码。</p></section>
     <section><h3 className="text-sm font-semibold">无辅助回忆回答</h3><div className="mt-3 space-y-3">{Object.entries(recallLabels).map(([key,label]) => <article key={key} className="rounded-lg border p-3"><p className="text-xs font-medium">{label}</p><p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-muted-foreground">{detail.recall?.[key] || "未作答"}</p></article>)}</div><p className="mt-2 text-[11px] text-muted-foreground">后台仅呈现原始回答；Goal、Hypothesis、Constraint 等 0–2 分编码仍需按预注册 rubric 由独立编码员完成。</p></section>

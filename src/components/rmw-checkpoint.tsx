@@ -30,6 +30,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { eventLog, readProblemStateActions } from "@/lib/event-log";
+import { problemStateToContinuousSummary } from "@/lib/problem-state";
 import type { ResearchTaskId } from "@/lib/research-task";
 import type {
   Condition,
@@ -70,8 +71,8 @@ const labels = {
     expire: "过期",
     calibrateHint: "点选卡片后可接受、编辑、置顶、标为存疑或过期。绿色=活跃，黄色=存疑，灰色=已过期。",
     saveAndBreak: "保存并进入中断任务",
-    waiting: "保存按钮将在 1 分钟后开放",
-    early: "请完成 1 分钟的查看时间，倒计时结束后才可进入中断任务。",
+    waiting: "准备阶段将在 3 分钟后结束",
+    early: "请完成 3 分钟的条件内准备，倒计时结束后才可进入中断任务。",
     guideTitle: "保存窗口说明",
     guideDescription: "只有 DeepSeek 成功分析参与者内容与研究轨迹后，才会显示 Problem State；校准后的结果会用于中断后的恢复支持。",
     interruption: "中断任务",
@@ -109,8 +110,8 @@ const labels = {
     expire: "Expire",
     calibrateHint: "Select a card to accept, edit, pin, mark uncertain, or expire. Green = active, amber = uncertain, gray = expired.",
     saveAndBreak: "Save and begin interruption",
-    waiting: "Save opens after one minute",
-    early: "Please use the full one-minute review period. The interruption opens when the countdown ends.",
+    waiting: "Preparation ends after three minutes",
+    early: "Please use the full three-minute condition-specific preparation period before the interruption.",
     guideTitle: "Save-window guide",
     guideDescription: "Problem state appears only after DeepSeek analyzes participant-authored content and research actions. The calibrated result is used for post-interruption recovery.",
     interruption: "Interruption",
@@ -148,8 +149,10 @@ export function ExperimentTimeline({ locale, active, compact=false }: { locale: 
   </div>;
 }
 
+const CHECKPOINT_DURATION_SECONDS = 180;
+
 function useCheckpointCountdown(fastMode: boolean) {
-  const duration = fastMode ? 0 : 60;
+  const duration = fastMode ? 0 : CHECKPOINT_DURATION_SECONDS;
   const [remaining, setRemaining] = useState(duration);
   useEffect(() => {
     const storageKey = "rmw-timer-checkpoint";
@@ -165,7 +168,7 @@ function useCheckpointCountdown(fastMode: boolean) {
 }
 
 function formatClock(totalSeconds: number) {
-  return `00:${String(totalSeconds).padStart(2, "0")}`;
+  return `${String(Math.floor(totalSeconds / 60)).padStart(2, "0")}:${String(totalSeconds % 60).padStart(2, "0")}`;
 }
 
 function StateTile({
@@ -467,12 +470,13 @@ export function RmwCheckpoint({
   messages: Array<{ role: "user" | "assistant"; text: string }>;
   testMode: boolean;
   onBack: () => void;
-  onContinue: (snapshot?: ProblemStateSnapshot) => void;
+  onContinue: (snapshot?: ProblemStateSnapshot, participantNotes?: string) => void;
 }) {
   const t = labels[locale];
   const [cards, setCards] = useState<ProblemStateCard[]>([]);
   const [relations, setRelations] = useState<ProblemStateRelation[]>([]);
   const [selected, setSelected] = useState("");
+  const [participantNotes, setParticipantNotes] = useState("");
   const [mode, setMode] = useState<"loading" | "live" | "insufficient" | "unavailable" | "error">("loading");
   const [guideOpen, setGuideOpen] = useState(true);
   const [earlyNotice, setEarlyNotice] = useState(false);
@@ -557,7 +561,9 @@ export function RmwCheckpoint({
   const suspended = cards.filter((card) => card.goalLevel === "suspended").slice(0, 3);
   const rejected = cards.find((card) => card.kind === "path");
   const selectedCard = cards.find((card) => card.id === selected) || cards[0];
+  const continuousSummary = problemStateToContinuousSummary(cards, locale);
   const extractionReady = condition === "rmw_no_summary" || mode === "live";
+  const preparationReady = extractionReady && (condition !== "rmw_no_summary" || participantNotes.trim().length >= 30);
   const modeLabel = mode === "live" ? "DeepSeek" : mode === "loading"
     ? (locale === "zh-CN" ? "分析中" : "Analyzing")
     : mode === "insufficient"
@@ -576,6 +582,8 @@ export function RmwCheckpoint({
     ? (locale === "zh-CN" ? "正在等待提取结果" : "Waiting for extraction")
     : !extractionReady
       ? (testMode ? (locale === "zh-CN" ? "测试模式可跳过；正式实验不可继续" : "Test mode may skip; the formal study cannot continue") : (locale === "zh-CN" ? "未生成 Problem State，无法进入中断任务" : "No problem state was generated; interruption is blocked"))
+      : condition === "rmw_no_summary" && participantNotes.trim().length < 30
+        ? (locale === "zh-CN" ? "请写下至少 30 个字的中断前恢复笔记" : "Write at least 30 characters of pre-interruption recovery notes")
       : testMode
         ? (locale === "zh-CN" ? "测试模式：可直接继续" : "Test mode: continue anytime")
         : remaining > 0 ? t.waiting : (locale === "zh-CN" ? "可以进入中断任务" : "Interruption task is ready");
@@ -591,9 +599,9 @@ export function RmwCheckpoint({
           <h1 className="text-3xl font-semibold tracking-tight">{t.title}</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
             {condition === "rmw_no_summary"
-              ? (locale === "zh-CN" ? "系统已自动保存你的工作区 memo 与对话。为保障基线对照纯净度，本组别不向被试展示中间推导卡片与网络校准界面。" : "Your workspace memo and chat history have been saved. Card display and calibration UI are omitted for this baseline condition to avoid pre-interruption rehearsal.")
+              ? (locale === "zh-CN" ? "请在同样的三分钟准备时间内独立撰写恢复笔记。系统不会用 AI 生成或改写这些笔记。" : "Use the same three-minute preparation period to write your own recovery notes. The system will not generate or rewrite them with AI.")
               : condition === "summary_only"
-                ? (locale === "zh-CN" ? "系统正在结合你的 memo 与对话在后台自动整理 Problem State。为保障基线对照纯净度，本组别不向被试展示中间推导卡片与网络校准界面。" : "The system is auto-extracting problem state in the background. Card display and calibration UI are omitted for this baseline condition to avoid pre-interruption rehearsal.")
+                ? (locale === "zh-CN" ? "请在同样的三分钟准备时间内阅读连续文本摘要。该摘要与 RMW 使用同一套提取内容。" : "Use the same three-minute preparation period to read a prose summary generated from the same extracted content as RMW.")
                 : t.subtitle}
           </p>
           {condition === "rmw" && mode === "live" && <p className="mt-2 max-w-3xl text-xs leading-5 text-primary">{t.calibrateHint}</p>}
@@ -609,40 +617,37 @@ export function RmwCheckpoint({
         </div>
       </header>
 
-      {condition === "rmw_no_summary" ? <section data-tour="checkpoint-self-notes-baseline" className="rounded-2xl border bg-white px-8 py-16 text-center shadow-[0_12px_40px_rgba(35,43,70,.05)]">
+      {condition === "rmw_no_summary" ? <section data-tour="checkpoint-self-notes-baseline" className="rounded-2xl border bg-white px-8 py-10 shadow-[0_12px_40px_rgba(35,43,70,.05)]">
         <div className="mx-auto grid size-14 place-items-center rounded-2xl bg-amber-50 text-amber-800">
           <Brain size={30} className="text-amber-800" />
         </div>
         <Badge variant="secondary" className="mt-4">{locale === "zh-CN" ? "方式二 · 用户自主笔记基线" : "Method 2 · Self-Notes Baseline"}</Badge>
-        <h2 className="mt-4 text-xl font-semibold">
-          {locale === "zh-CN" ? "工作区记录已保存 · 准备进入中断任务" : "Workspace notes saved · Ready for interruption"}
-        </h2>
-        <p className="mx-auto mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
-          {locale === "zh-CN"
-            ? "你的工作区 memo 与对话记录已成功保存。本组别（方式二：用户自主笔记基线）不提供 AI 推理卡片与网络生成，请凭借你在工作区中记录的笔记继续恢复研究。"
-            : "Your workspace memo and chat history have been saved. Method 2 (Self-Notes Baseline) provides no AI reasoning cards or network diagram; proceed using your own workspace notes."}
-        </p>
-      </section> : condition === "summary_only" ? <section data-tour="checkpoint-summary-baseline" className="rounded-2xl border bg-white px-8 py-16 text-center shadow-[0_12px_40px_rgba(35,43,70,.05)]">
+        <h2 className="mt-4 text-center text-xl font-semibold">{locale === "zh-CN" ? "写下中断后需要看到的恢复笔记" : "Write the notes you want available after interruption"}</h2>
+        <p className="mx-auto mt-3 max-w-2xl text-center text-sm leading-7 text-muted-foreground">{locale === "zh-CN" ? "请独立写下目标、当前判断、约束、已排除方向、不确定性和下一步。这份文字会在恢复时原样呈现，不会由 AI 改写。" : "Independently record the goal, current position, constraint, rejected direction, uncertainty, and next step. These notes will be shown verbatim after interruption."}</p>
+        <Textarea className="mx-auto mt-5 min-h-44 max-w-3xl text-sm leading-6" value={participantNotes} onChange={(event) => setParticipantNotes(event.target.value)} placeholder={locale === "zh-CN" ? "中断前用户笔记（至少 30 字）……" : "Pre-interruption self-notes (at least 30 characters)…"} />
+        <p className="mx-auto mt-2 max-w-3xl text-right font-mono text-[10px] text-muted-foreground">{participantNotes.trim().length} / 30+</p>
+      </section> : condition === "summary_only" ? <section data-tour="checkpoint-summary-baseline" className="rounded-2xl border bg-white px-8 py-10 shadow-[0_12px_40px_rgba(35,43,70,.05)]">
         <div className="mx-auto grid size-14 place-items-center rounded-2xl bg-indigo-50 text-primary">
           <Brain size={30} className={mode === "loading" ? "animate-pulse text-indigo-600" : "text-indigo-600"} />
         </div>
         <Badge variant="secondary" className="mt-4">{locale === "zh-CN" ? "方式三 · 纯 AI 恢复摘要基线" : "Method 3 · Pure AI Summary Baseline"}</Badge>
-        <h2 className="mt-4 text-xl font-semibold">
+        <h2 className="mt-4 text-center text-xl font-semibold">
           {mode === "loading"
             ? (locale === "zh-CN" ? "后台自动提取 Problem State 中……" : "Auto-extracting problem state in background…")
             : mode === "live"
               ? (locale === "zh-CN" ? "后台保存完成 · 准备进入中断任务" : "Background extraction complete · Ready for interruption")
               : (locale === "zh-CN" ? "后台提取状态" : "Background extraction status")}
         </h2>
-        <p className="mx-auto mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
+        <p className="mx-auto mt-3 max-w-2xl text-center text-sm leading-7 text-muted-foreground">
           {mode === "loading"
             ? emptyMessage
             : mode === "live"
               ? (locale === "zh-CN"
-                ? "系统已在后台自动归纳你的研究推理状态，该状态将用于中断后的 AI 摘要生成。为了防止中断前的卡片预演（Cards Rehearsal Effect）干扰实验基线，在此步骤无需进行人工卡片查看或校准。"
-                : "Your reasoning state has been summarized in the background and will be used for post-interruption AI summary generation. In Method 3 (Pure AI Summary Baseline), pre-interruption card review and calibration are omitted to prevent rehearsal confounding.")
+                ? "以下摘要与 RMW 使用同一套 Problem State 信息，但以连续文本呈现，不显示认识状态、来源链接或校准操作。请在三分钟准备时间内阅读。"
+                : "The summary below uses the same underlying Problem State content as RMW, rendered as prose without epistemic-status labels, provenance links, or calibration controls.")
               : emptyMessage}
         </p>
+        {mode === "live" && <div className="mx-auto mt-5 max-h-[360px] max-w-4xl overflow-auto rounded-xl bg-muted/60 p-5"><p className="whitespace-pre-wrap text-sm leading-7">{continuousSummary}</p></div>}
       </section> : mode === "live" ? <>
       <section className="grid grid-cols-[1fr_1.25fr] gap-5">
         <article data-tour="checkpoint-goals" className="rounded-2xl border bg-white p-5 shadow-[0_12px_40px_rgba(35,43,70,.05)]">
@@ -690,11 +695,11 @@ export function RmwCheckpoint({
       </section>}
 
       <div data-tour="checkpoint-footer" className="mt-5 flex items-center justify-between rounded-2xl border bg-white p-4">
-        <div className="flex items-center gap-3 text-sm"><Clock size={20} className="text-primary" /><div><p className="font-medium">{footerStatus}</p>{!testMode&&extractionReady&&remaining>0&&<div className="mt-2 flex items-center gap-3"><Progress value={((60-remaining)/60)*100} className="h-1.5 w-32" /><span className="text-xs text-muted-foreground">{formatClock(remaining)}</span></div>}</div></div>
+        <div className="flex items-center gap-3 text-sm"><Clock size={20} className="text-primary" /><div><p className="font-medium">{footerStatus}</p>{!testMode&&extractionReady&&remaining>0&&<div className="mt-2 flex items-center gap-3"><Progress value={((CHECKPOINT_DURATION_SECONDS-remaining)/CHECKPOINT_DURATION_SECONDS)*100} className="h-1.5 w-32" /><span className="text-xs text-muted-foreground">{formatClock(remaining)}</span></div>}</div></div>
         <div className="text-right">
           {!testMode&&earlyNotice && remaining > 0 && <p role="status" className="mb-2 text-xs text-amber-700">{t.early}</p>}
-          <Button variant={extractionReady&&(testMode||remaining === 0) ? "default" : "secondary"} disabled={mode === "loading" || (!testMode&&!extractionReady)} className="h-11 px-6" onClick={() => {
-            if (!extractionReady) {
+          <Button variant={preparationReady&&(testMode||remaining === 0) ? "default" : "secondary"} disabled={mode === "loading" || (!testMode&&!preparationReady)} className="h-11 px-6" onClick={() => {
+            if (!preparationReady) {
               if (testMode) {
                 eventLog("checkpoint_skipped_in_test_mode", { taskId, reason: mode }, { stage: "checkpoint" });
                 onContinue();
@@ -706,9 +711,10 @@ export function RmwCheckpoint({
               eventLog("checkpoint_continue_blocked", { remaining }, { stage: "checkpoint" });
               return;
             }
-            eventLog("checkpoint_completed", { taskId, cards, relations }, { stage: "checkpoint" });
-            onContinue({ cards, relations, capturedAt: new Date().toISOString() });
-          }}>{!extractionReady&&testMode?(locale === "zh-CN"?"仅测试模式：跳过保存":"Test mode only: skip save"):t.saveAndBreak}<ArrowRight /></Button>
+            eventLog("checkpoint_completed", { taskId, condition, cards, relations, participantNotesLength: participantNotes.trim().length, preparationSeconds: CHECKPOINT_DURATION_SECONDS }, { stage: "checkpoint" });
+            if (condition === "rmw_no_summary") onContinue(undefined, participantNotes.trim());
+            else onContinue({ cards, relations, capturedAt: new Date().toISOString() });
+          }}>{!preparationReady&&testMode?(locale === "zh-CN"?"仅测试模式：跳过保存":"Test mode only: skip save"):t.saveAndBreak}<ArrowRight /></Button>
         </div>
       </div>
     </div>

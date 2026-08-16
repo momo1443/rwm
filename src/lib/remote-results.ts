@@ -93,16 +93,16 @@ function queueFlush(sessionId: string, completed = false) {
   return flushQueue;
 }
 
-export async function startRemoteStudySession(input: { sessionId: string; participantCode: string; locale: string; condition: string; taskId: string }) {
+export async function startRemoteStudySession(input: { sessionId: string; participantCode: string; locale: string; condition: string; taskId: string; assignmentMode: "auto" | "manual" }) {
   const existingToken = typeof window === "undefined" || sessionStorage.getItem(TOKEN_SESSION_KEY) !== input.sessionId
     ? ""
     : sessionStorage.getItem(TOKEN_KEY) || "";
   const result = await postResult({ action: "start", ...input, token: existingToken || undefined });
-  if (typeof result?.token !== "string" || result.sessionId !== input.sessionId) return false;
+  if (typeof result?.token !== "string" || result.sessionId !== input.sessionId || typeof result.condition !== "string" || typeof result.taskId !== "string") return null;
   sessionStorage.setItem(TOKEN_KEY, result.token);
   sessionStorage.setItem(TOKEN_SESSION_KEY, input.sessionId);
   await queueFlush(input.sessionId);
-  return true;
+  return { condition: result.condition, taskId: result.taskId };
 }
 
 export function syncRemoteEvent(event: Record<string, unknown>) {
