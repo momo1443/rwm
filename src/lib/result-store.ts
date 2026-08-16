@@ -58,6 +58,7 @@ export type ReviewUpdate = {
 export type BlindReviewUpdate = { scores: BlindReviewScoreSet; note: string | null };
 
 const EMPTY_DATABASE: ResultDatabase = { results: [], events: [] };
+const INCOMPLETE_EXCLUSION_REASON = "未完成实验";
 let localWriteQueue = Promise.resolve();
 
 async function fileApi() {
@@ -161,8 +162,8 @@ export async function createParticipant(input: { sessionId: string; participantC
     recall: null,
     recovery_state: null,
     task_assessment: null,
-    analysis_status: "included",
-    exclusion_reason: null,
+    analysis_status: "excluded",
+    exclusion_reason: INCOMPLETE_EXCLUSION_REASON,
     review_note: null,
     reviewed_at: null,
     blind_review_scores: null,
@@ -179,8 +180,6 @@ export async function createParticipant(input: { sessionId: string; participantC
     return;
   }
   const supabaseRow: Partial<ParticipantResultRow> = { ...row };
-  delete supabaseRow.analysis_status;
-  delete supabaseRow.exclusion_reason;
   delete supabaseRow.review_note;
   delete supabaseRow.reviewed_at;
   delete supabaseRow.blind_review_scores;
@@ -213,7 +212,12 @@ export async function updateParticipant(sessionId: string, update: ResultUpdate,
   if (!config) throw new Error("Result storage is not configured");
   const now = new Date().toISOString();
   const patch: Record<string, unknown> = { ...update, updated_at: now };
-  if (completed) Object.assign(patch, { status: "completed", completed_at: now });
+  if (completed) Object.assign(patch, {
+    status: "completed",
+    completed_at: now,
+    analysis_status: "included",
+    exclusion_reason: null,
+  });
   if (config.mode === "local") {
     await updateLocalDatabase(config.directory, (database) => {
       const result = database.results.find((candidate) => candidate.session_id === sessionId);

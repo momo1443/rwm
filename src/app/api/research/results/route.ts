@@ -105,6 +105,7 @@ export async function GET(request: NextRequest) {
       eventsBySession.set(event.session_id, current);
     }
     const results = database.results
+      .filter((result) => result.status === "completed")
       .map((result) => {
         const sessionEvents = (eventsBySession.get(result.session_id) || []).toSorted((left, right) => left.sequence_number - right.sequence_number);
         const interruption = interruptionMetrics(sessionEvents);
