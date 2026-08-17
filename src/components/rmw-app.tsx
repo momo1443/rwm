@@ -111,7 +111,7 @@ export function RmwApp() {
   const [startError, setStartError] = useState("");
   const [problemState, setProblemState] = useState<ProblemStateSnapshot | null>(() => readProblemStateSnapshot());
   const [recoveryAssessment, setRecoveryAssessment] = useState<RecoveryAssessment>(() => createRecoveryAssessment("city_policy", "00000000-0000-4000-8000-000000000000"));
-  const completionSubmittedRef = useRef(false);
+  const [completionStatus, setCompletionStatus] = useState<"saving" | "saved" | "error">("saving");
   const t = copy[locale];
 
   useEffect(() => {
@@ -147,10 +147,13 @@ export function RmwApp() {
   }, []);
 
   useEffect(() => {
-    if (screen !== "complete" || completionSubmittedRef.current) return;
-    completionSubmittedRef.current = true;
-    completeRemoteStudy({ memo, chat, problemState, taskAssessment: recoveryAssessment });
-  }, [chat, memo, problemState, recoveryAssessment, screen]);
+    if (screen !== "complete" || completionStatus !== "saving") return;
+    let active = true;
+    void completeRemoteStudy({ memo, chat, problemState, taskAssessment: recoveryAssessment }).then((saved) => {
+      if (active) setCompletionStatus(saved ? "saved" : "error");
+    });
+    return () => { active = false; };
+  }, [chat, completionStatus, memo, problemState, recoveryAssessment, screen]);
 
   return (
     <>
@@ -172,7 +175,7 @@ export function RmwApp() {
           setCondition(assignedCondition);
           setTaskId(assignedTaskId);
           eventLog("consent_submitted", { locale, access: "anonymous", participantId, condition: assignedCondition }, { stage: "consent" });
-          completionSubmittedRef.current = false;
+          setCompletionStatus("saving");
           setMemo(task.starterMemo[locale]);
           setChat([{ role: "assistant", text: task.assistantIntro[locale] }]);
           setProblemState(null);
@@ -234,7 +237,7 @@ export function RmwApp() {
           eventLog("recovery_post_survey_submitted", postSurvey, { stage: "post_recovery_survey", targetType: "survey", targetId: "recovery_experience_v1" });
           setScreen("complete");
         }} />}
-        {screen === "complete" && <Complete setScreen={setScreen} t={t} />}
+        {screen === "complete" && <Complete locale={locale} status={completionStatus} retry={() => setCompletionStatus("saving")} setScreen={setScreen} t={t} />}
       </main>
     </>
   );
@@ -1155,4 +1158,8 @@ function RecoveryPostSurveyPage({ locale, onSubmit }: { locale: Locale; onSubmit
   return <main className="min-h-screen bg-[#f7f6f2] px-6 py-10"><div className="mx-auto max-w-3xl rounded-2xl border bg-white p-7 shadow-[0_18px_60px_rgba(35,40,65,.08)]"><p className="font-mono text-[10px] uppercase tracking-[.16em] text-primary">{locale === "zh-CN" ? "恢复后问卷" : "Post-recovery survey"}</p><h1 className="mt-2 text-2xl font-semibold">{locale === "zh-CN" ? "刚才的恢复体验" : "Your recovery experience"}</h1><p className="mt-2 text-sm leading-6 text-muted-foreground">{locale === "zh-CN" ? "请根据刚刚完成的任务作答。1 表示完全不同意，7 表示完全同意。" : "Answer based on the task you just completed. 1 means strongly disagree and 7 means strongly agree."}</p><div className="mt-6 space-y-4">{items.map((item, index) => <fieldset key={item.key} className="rounded-xl border p-4"><legend className="px-1 text-sm font-medium">{index + 1}. {locale === "zh-CN" ? item.zh : item.en}</legend><div className="mt-3 grid grid-cols-7 gap-2">{[1,2,3,4,5,6,7].map((value) => <label key={value} className={`cursor-pointer rounded-lg border p-2 text-center text-sm ${answers[item.key] === value ? "border-primary bg-secondary text-primary" : "bg-white"}`}><input className="sr-only" type="radio" name={item.key} value={value} checked={answers[item.key] === value} onChange={() => setAnswers((current) => ({ ...current, [item.key]: value }))}/>{value}</label>)}</div><div className="mt-2 flex justify-between text-[10px] text-muted-foreground"><span>{locale === "zh-CN" ? item.lowZh : item.lowEn}</span><span>{locale === "zh-CN" ? item.highZh : item.highEn}</span></div></fieldset>)}</div><TimedButton seconds={5} ready={complete} locale={locale} label={locale === "zh-CN" ? "提交并结束研究" : "Submit and finish"} blockedLabel={locale === "zh-CN" ? "请完成全部题目" : "Answer every item"} className="mt-7 h-12 w-full" onClick={() => onSubmit(answers as RecoveryPostSurvey)}/></div></main>;
 }
 
-function Complete({setScreen,t}:{setScreen:(s:Screen)=>void;t:typeof copy[Locale]}) { return <div className="grid min-h-screen place-items-center bg-[#f7f6f2] p-8"><div className="max-w-lg text-center"><div className="mx-auto grid size-16 place-items-center rounded-2xl bg-[var(--active-soft)] text-[var(--active)]"><CheckCircle size={36} weight="fill"/></div><h1 className="mt-6 text-3xl font-semibold">{t.completed}</h1><p className="mt-3 text-muted-foreground">{t.completeText}</p><Button variant="outline" className="mt-8" onClick={()=>setScreen("landing")}>{t.back}</Button></div></div> }
+function Complete({locale,status,retry,setScreen,t}:{locale:Locale;status:"saving"|"saved"|"error";retry:()=>void;setScreen:(s:Screen)=>void;t:typeof copy[Locale]}) {
+  if(status==="saving") return <div className="grid min-h-screen place-items-center bg-[#f7f6f2] p-8"><div className="max-w-lg text-center"><div className="mx-auto grid size-16 animate-pulse place-items-center rounded-2xl bg-[var(--active-soft)] text-[var(--active)]"><Clock size={34}/></div><h1 className="mt-6 text-3xl font-semibold">{locale==="zh-CN"?"正在安全保存":"Saving securely"}</h1><p className="mt-3 text-muted-foreground">{locale==="zh-CN"?"请保持页面开启，正在确认结果已写入研究数据库。":"Keep this page open while we confirm that your results reached the research database."}</p></div></div>;
+  if(status==="error") return <div className="grid min-h-screen place-items-center bg-[#f7f6f2] p-8"><div className="max-w-lg text-center"><div className="mx-auto grid size-16 place-items-center rounded-2xl bg-red-50 text-red-600"><WarningCircle size={36} weight="fill"/></div><h1 className="mt-6 text-3xl font-semibold">{locale==="zh-CN"?"保存尚未完成":"Save not confirmed"}</h1><p role="alert" className="mt-3 text-muted-foreground">{locale==="zh-CN"?"网络或服务器暂时无法确认保存。你的回答仍保留在本设备中，请重试且不要关闭页面。":"The network or server could not confirm the save. Your answers remain on this device; retry without closing the page."}</p><Button className="mt-8" onClick={retry}>{locale==="zh-CN"?"重试保存":"Retry save"}</Button></div></div>;
+  return <div className="grid min-h-screen place-items-center bg-[#f7f6f2] p-8"><div className="max-w-lg text-center"><div className="mx-auto grid size-16 place-items-center rounded-2xl bg-[var(--active-soft)] text-[var(--active)]"><CheckCircle size={36} weight="fill"/></div><h1 className="mt-6 text-3xl font-semibold">{t.completed}</h1><p className="mt-3 text-muted-foreground">{t.completeText}</p><Button variant="outline" className="mt-8" onClick={()=>setScreen("landing")}>{t.back}</Button></div></div>;
+}

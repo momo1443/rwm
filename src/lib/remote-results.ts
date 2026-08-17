@@ -20,7 +20,7 @@ type Snapshot = {
   taskAssessment?: unknown;
 };
 
-let flushQueue = Promise.resolve();
+let flushQueue: Promise<boolean> = Promise.resolve(true);
 
 function activeSessionId() {
   return typeof window === "undefined" ? "" : sessionStorage.getItem(SESSION_KEY) || "";
@@ -60,36 +60,43 @@ async function postResult(body: Record<string, unknown>) {
   }
 }
 
-async function flushOutboxes(sessionId: string, completed = false) {
-  if (typeof window === "undefined") return;
-  if (!sessionId || sessionStorage.getItem(TOKEN_SESSION_KEY) !== sessionId) return;
+async function flushOutboxes(sessionId: string, completed = false): Promise<boolean> {
+  if (typeof window === "undefined") return false;
+  if (!sessionId || sessionStorage.getItem(TOKEN_SESSION_KEY) !== sessionId) return false;
   const token = sessionStorage.getItem(TOKEN_KEY);
-  if (!token) return;
+  if (!token) return false;
 
   const snapshotKey = storageKey(SNAPSHOT_OUTBOX_PREFIX, sessionId);
   const snapshot = readObject<Snapshot>(snapshotKey, {});
+  let snapshotSaved = !completed;
   if (completed || Object.keys(snapshot).length) {
     const sentSnapshot = JSON.stringify(snapshot);
     const result = await postResult({ action: completed ? "complete" : "snapshot", token, data: snapshot });
-    if ((result?.mode === "saved" || result?.mode === "completed") && localStorage.getItem(snapshotKey) === sentSnapshot) {
+    snapshotSaved = completed ? result?.mode === "completed" : result?.mode === "saved";
+    if (snapshotSaved && localStorage.getItem(snapshotKey) === sentSnapshot) {
       localStorage.removeItem(snapshotKey);
     }
   }
 
   const eventKey = storageKey(EVENT_OUTBOX_PREFIX, sessionId);
   const events = readObject<Record<string, unknown>[]>(eventKey, []);
+  let eventsSaved = true;
   for (const event of events) {
     const result = await postResult({ action: "event", token, event });
-    if (!result) break;
+    if (!result) {
+      eventsSaved = false;
+      break;
+    }
     const current = readObject<Record<string, unknown>[]>(eventKey, []);
     const remaining = current.filter((saved) => saved.id !== event.id);
     if (remaining.length) writeObject(eventKey, remaining);
     else localStorage.removeItem(eventKey);
   }
+  return snapshotSaved && eventsSaved;
 }
 
 function queueFlush(sessionId: string, completed = false) {
-  flushQueue = flushQueue.then(() => flushOutboxes(sessionId, completed)).catch(() => undefined);
+  flushQueue = flushQueue.then(() => flushOutboxes(sessionId, completed)).catch(() => false);
   return flushQueue;
 }
 
@@ -124,11 +131,11 @@ export function saveRemoteStudySnapshot(input: Snapshot) {
   void queueFlush(sessionId);
 }
 
-export function completeRemoteStudy(input: Pick<Snapshot, "memo" | "chat" | "problemState" | "taskAssessment">) {
-  if (typeof window === "undefined") return;
+export async function completeRemoteStudy(input: Pick<Snapshot, "memo" | "chat" | "problemState" | "taskAssessment">) {
+  if (typeof window === "undefined") return false;
   const sessionId = activeSessionId();
-  if (!sessionId) return;
+  if (!sessionId) return false;
   const key = storageKey(SNAPSHOT_OUTBOX_PREFIX, sessionId);
   writeObject(key, { ...readObject<Snapshot>(key, {}), ...input });
-  void queueFlush(sessionId, true);
+  return queueFlush(sessionId, true);
 }
