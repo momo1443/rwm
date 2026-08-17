@@ -125,6 +125,17 @@ async function supabaseRequest<T>(pathName: string, init: RequestInit = {}) {
   return await response.json() as T;
 }
 
+async function supabaseRequestAll<T>(pathName: string) {
+  const pageSize = 1000;
+  const rows: T[] = [];
+  for (let offset = 0; ; offset += pageSize) {
+    const separator = pathName.includes("?") ? "&" : "?";
+    const page = await supabaseRequest<T[]>(`${pathName}${separator}limit=${pageSize}&offset=${offset}`);
+    rows.push(...page);
+    if (page.length < pageSize) return rows;
+  }
+}
+
 export function resultStorageMode() {
   return getResultStorageConfig()?.mode || null;
 }
@@ -254,8 +265,8 @@ export async function readAllResults(): Promise<ResultDatabase> {
   if (!config) return structuredClone(EMPTY_DATABASE);
   if (config.mode === "local") return readLocalDatabase(config.directory);
   const [results, events] = await Promise.all([
-    supabaseRequest<ParticipantResultRow[]>("participant_results?select=*&order=created_at.asc"),
-    supabaseRequest<ResultEventRow[]>("participant_result_events?select=*&order=server_timestamp.asc"),
+    supabaseRequestAll<ParticipantResultRow>("participant_results?select=*&order=created_at.asc"),
+    supabaseRequestAll<ResultEventRow>("participant_result_events?select=*&order=server_timestamp.asc"),
   ]);
   return { results, events };
 }
