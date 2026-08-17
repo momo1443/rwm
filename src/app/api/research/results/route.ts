@@ -123,6 +123,7 @@ export async function GET(request: NextRequest) {
         const probeCount = recoveryAssessment ? ["t1", "t2", "t3"].filter((stage) => Boolean(recoveryAssessment.probes[stage as keyof typeof recoveryAssessment.probes])).length : 0;
         const phaseOneMaterialCompletionIds = new Set(sessionEvents.filter((event) => event.event_type === "material_exposure_completed" && event.stage === "research_work").map((event) => event.target_id).filter(Boolean));
         const recoveryTabs = [...new Set(sessionEvents.filter((event) => event.event_type === "recovery_tab_viewed").map((event) => event.target_id).filter((value): value is string => Boolean(value)))];
+        const researcherTest = sessionEvents.some((event) => event.event_type === "research_task_started" && event.payload.assignment === "manual_test");
         return {
         session_id: result.session_id,
         participant_code: result.participant_code,
@@ -162,6 +163,7 @@ export async function GET(request: NextRequest) {
         recovery_new_material_exposed: taskMetadata.recoveryMaterialId === null ? null : sessionEvents.some((event) => event.event_type === "material_exposure_completed" && event.stage === "recovery" && event.target_id === taskMetadata.recoveryMaterialId),
         recovery_rendered: sessionEvents.some((event) => event.event_type === "recovery_support_rendered"),
         recovery_tabs: recoveryTabs,
+        researcher_test: researcherTest,
         assessment_version: assessmentVersion,
         recovery_probe_count: probeCount,
         recovery_probe_complete: probeCount === 3,

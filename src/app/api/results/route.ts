@@ -106,7 +106,11 @@ async function participantFromToken(token: string, secret: string) {
   const payload = await verifySignedToken(token, secret);
   if (payload?.scope !== "participant" || typeof payload.participantCode !== "string" || typeof payload.sessionId !== "string") return null;
   if (!participantCodeSchema.safeParse(payload.participantCode).success || !sessionIdSchema.safeParse(payload.sessionId).success) return null;
-  return { participantCode: payload.participantCode, sessionId: payload.sessionId };
+  return {
+    participantCode: payload.participantCode,
+    sessionId: payload.sessionId,
+    assignmentMode: payload.assignmentMode === "manual" ? "manual" as const : "auto" as const,
+  };
 }
 
 const activeConditions = ["rmw", "rmw_no_summary", "summary_only"] as const;
@@ -147,10 +151,11 @@ export async function POST(request: Request) {
 
   try {
     if (parsed.data.action === "start") {
-      const { sessionId, participantCode, locale, assignmentMode, token: resumeToken } = parsed.data;
+      const { sessionId, participantCode, locale, token: resumeToken } = parsed.data;
       const existing = await findSession(sessionId);
       let condition = parsed.data.condition;
       let taskId = parsed.data.taskId;
+      let assignmentMode = parsed.data.assignmentMode;
       if (existing) {
         const resumedSession = resumeToken ? await participantFromToken(resumeToken, sessionSecret) : null;
         if (resumedSession?.sessionId !== sessionId || resumedSession.participantCode !== participantCode) {
@@ -158,6 +163,7 @@ export async function POST(request: Request) {
         }
         condition = existing.condition as typeof condition;
         taskId = existing.task_id as typeof taskId;
+        assignmentMode = resumedSession.assignmentMode;
       } else {
         if (assignmentMode === "auto") {
           const assigned = await balancedAssignment();
@@ -170,6 +176,7 @@ export async function POST(request: Request) {
         scope: "participant",
         participantCode,
         sessionId,
+        assignmentMode,
         exp: Date.now() + 12 * 60 * 60 * 1000,
       }, sessionSecret);
       return NextResponse.json({ mode: storageMode, token, sessionId, condition, taskId, assignmentMode });
@@ -208,7 +215,9 @@ export async function POST(request: Request) {
       ...(data.recall !== undefined && { recall: data.recall }),
       ...(data.recoveryState !== undefined && { recovery_state: data.recoveryState }),
       ...(data.taskAssessment !== undefined && { task_assessment: data.taskAssessment }),
-    }, parsed.data.action === "complete");
+    }, parsed.data.action === "complete", parsed.data.action === "complete" && session.assignmentMode === "manual"
+      ? { analysisStatus: "excluded", exclusionReason: "研究者测试" }
+      : undefined);
     return NextResponse.json({ mode: parsed.data.action === "complete" ? "completed" : "saved" });
   } catch (error) {
     console.error("Result storage request failed", { action: parsed.data.action, storageMode, error });

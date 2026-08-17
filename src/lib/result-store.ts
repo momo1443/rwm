@@ -231,7 +231,12 @@ export async function saveResultEvents(sessionId: string, participantCode: strin
   });
 }
 
-export async function updateParticipant(sessionId: string, update: ResultUpdate, completed: boolean) {
+export async function updateParticipant(
+  sessionId: string,
+  update: ResultUpdate,
+  completed: boolean,
+  completionReview?: { analysisStatus: AnalysisStatus; exclusionReason: string | null },
+) {
   const config = getResultStorageConfig();
   if (!config) throw new Error("Result storage is not configured");
   const now = new Date().toISOString();
@@ -239,8 +244,8 @@ export async function updateParticipant(sessionId: string, update: ResultUpdate,
   if (completed) Object.assign(patch, {
     status: "completed",
     completed_at: now,
-    analysis_status: "included",
-    exclusion_reason: null,
+    analysis_status: completionReview?.analysisStatus || "included",
+    exclusion_reason: completionReview?.exclusionReason || null,
   });
   if (config.mode === "local") {
     await updateLocalDatabase(config.directory, (database) => {

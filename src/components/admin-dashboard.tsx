@@ -54,6 +54,7 @@ type ResultSummary = {
   recovery_new_material_exposed: boolean | null;
   recovery_rendered: boolean;
   recovery_tabs: string[];
+  researcher_test: boolean;
   assessment_version: string | null;
   recovery_probe_count: number;
   recovery_probe_complete: boolean;
@@ -65,7 +66,7 @@ type ResultSummary = {
   city_policy_t3_accuracy: number | null;
   city_policy_recovery_gain: number | null;
 };
-type ParticipantResult = Omit<ResultSummary, "memo_length" | "has_recall" | "has_problem_state" | "event_count" | "event_sequence_complete" | "initial_material_presented" | "initial_material_id" | "expected_material_count" | "material_completion_count" | "recovery_new_material_exposed" | "recovery_rendered" | "recovery_tabs"> & {
+type ParticipantResult = Omit<ResultSummary, "memo_length" | "has_recall" | "has_problem_state" | "event_count" | "event_sequence_complete" | "initial_material_presented" | "initial_material_id" | "expected_material_count" | "material_completion_count" | "recovery_new_material_exposed" | "recovery_rendered" | "recovery_tabs" | "researcher_test"> & {
   memo: string | null;
   chat: Array<{ role: "user" | "assistant"; text: string }> | null;
   problem_state: unknown;
@@ -106,6 +107,9 @@ function formatDuration(result: Pick<ResultSummary, "consented_at" | "completed_
 
 function qualityFlags(result: ResultSummary) {
   const flags: string[] = [];
+  const durationSeconds = result.completed_at ? (new Date(result.completed_at).getTime() - new Date(result.consented_at).getTime()) / 1000 : null;
+  if (result.researcher_test) flags.push("研究者测试运行");
+  if (durationSeconds !== null && durationSeconds < 20 * 60) flags.push("用时短于正式流程下限");
   if (result.status !== "completed") flags.push("未完成");
   if (!result.pre_survey || Object.keys(result.pre_survey).length < surveyItems.length) flags.push("前测缺失");
   if (result.memo_length < 600) flags.push("Memo 较短");
