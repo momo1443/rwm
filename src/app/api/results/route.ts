@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { randomInt } from "node:crypto";
 import { z } from "zod";
-import { createParticipant, findSession, readAllResults, resultStorageMode, saveResultEvent, updateParticipant } from "@/lib/result-store";
+import { createParticipant, findSession, readAllResults, resultStorageMode, saveResultEvents, updateParticipant } from "@/lib/result-store";
 import { getParticipantSessionSecret } from "@/lib/results-server";
 import { createSignedToken, verifySignedToken } from "@/lib/signed-token";
 import { researchTaskIds } from "@/lib/research-task";
@@ -81,6 +81,10 @@ const eventSchema = z.object({
   payload: z.record(z.string(), z.unknown()).refine((value) => JSON.stringify(value).length <= 20000, "Event payload is too large"),
   at: z.string().datetime(),
 });
+const eventBatchSchema = z.array(eventSchema).min(1).max(1000).refine(
+  (events) => JSON.stringify(events).length <= 900000,
+  "Event batch is too large",
+);
 const requestSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("start"),
@@ -93,6 +97,7 @@ const requestSchema = z.discriminatedUnion("action", [
     token: z.string().min(1).max(2000).optional(),
   }),
   z.object({ action: z.literal("event"), token: z.string().min(1).max(2000), event: eventSchema }),
+  z.object({ action: z.literal("events"), token: z.string().min(1).max(2000), events: eventBatchSchema }),
   z.object({ action: z.literal("snapshot"), token: z.string().min(1).max(2000), data: snapshotSchema }),
   z.object({ action: z.literal("complete"), token: z.string().min(1).max(2000), data: snapshotSchema }),
 ]);
@@ -173,10 +178,12 @@ export async function POST(request: Request) {
     const session = await participantFromToken(parsed.data.token, sessionSecret);
     if (!session) return NextResponse.json({ error: "Invalid participant session" }, { status: 401 });
 
-    if (parsed.data.action === "event") {
-      const event = parsed.data.event;
-      if (event.sessionId !== session.sessionId) return NextResponse.json({ error: "Event session does not match token" }, { status: 403 });
-      await saveResultEvent(session.sessionId, session.participantCode, {
+    if (parsed.data.action === "event" || parsed.data.action === "events") {
+      const events = parsed.data.action === "event" ? [parsed.data.event] : parsed.data.events;
+      if (events.some((event) => event.sessionId !== session.sessionId)) {
+        return NextResponse.json({ error: "Event session does not match token" }, { status: 403 });
+      }
+      await saveResultEvents(session.sessionId, session.participantCode, events.map((event) => ({
         id: event.id,
         sequence_number: event.sequenceNumber,
         event_type: event.type,
@@ -185,8 +192,8 @@ export async function POST(request: Request) {
         target_id: event.targetId || null,
         payload: event.payload,
         client_timestamp: event.at,
-      });
-      return NextResponse.json({ mode: "saved" });
+      })));
+      return NextResponse.json({ mode: "saved", count: events.length });
     }
 
     const data = parsed.data.data;

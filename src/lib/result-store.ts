@@ -190,20 +190,33 @@ export async function createParticipant(input: { sessionId: string; participantC
 }
 
 export async function saveResultEvent(sessionId: string, participantCode: string, event: ResultEventInput) {
+  return saveResultEvents(sessionId, participantCode, [event]);
+}
+
+export async function saveResultEvents(sessionId: string, participantCode: string, events: ResultEventInput[]) {
+  if (!events.length) return;
   const config = getResultStorageConfig();
   if (!config) throw new Error("Result storage is not configured");
-  const row: ResultEventRow = { ...event, session_id: sessionId, participant_code: participantCode, server_timestamp: new Date().toISOString() };
+  const serverTimestamp = new Date().toISOString();
+  const rows: ResultEventRow[] = events.map((event) => ({
+    ...event,
+    session_id: sessionId,
+    participant_code: participantCode,
+    server_timestamp: serverTimestamp,
+  }));
   if (config.mode === "local") {
     await updateLocalDatabase(config.directory, (database) => {
-      if (database.events.some((saved) => saved.id === row.id || (saved.session_id === sessionId && saved.sequence_number === row.sequence_number))) return;
-      database.events.push(row);
+      for (const row of rows) {
+        if (database.events.some((saved) => saved.id === row.id || (saved.session_id === sessionId && saved.sequence_number === row.sequence_number))) continue;
+        database.events.push(row);
+      }
     });
     return;
   }
   await supabaseRequest("participant_result_events?on_conflict=id", {
     method: "POST",
     headers: { prefer: "resolution=ignore-duplicates,return=minimal" },
-    body: JSON.stringify(row),
+    body: JSON.stringify(rows),
   });
 }
 

@@ -66,6 +66,25 @@ async function flushOutboxes(sessionId: string, completed = false): Promise<bool
   const token = sessionStorage.getItem(TOKEN_KEY);
   if (!token) return false;
 
+  const eventKey = storageKey(EVENT_OUTBOX_PREFIX, sessionId);
+  let eventsSaved = false;
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const events = readObject<Record<string, unknown>[]>(eventKey, []);
+    if (!events.length) {
+      eventsSaved = true;
+      break;
+    }
+    const result = await postResult({ action: "events", token, events });
+    if (result?.mode !== "saved" || result.count !== events.length) break;
+    const current = readObject<Record<string, unknown>[]>(eventKey, []);
+    const sentIds = new Set(events.map((event) => event.id));
+    const remaining = current.filter((saved) => !sentIds.has(saved.id));
+    if (remaining.length) writeObject(eventKey, remaining);
+    else localStorage.removeItem(eventKey);
+  }
+
+  if (!eventsSaved) return false;
+
   const snapshotKey = storageKey(SNAPSHOT_OUTBOX_PREFIX, sessionId);
   const snapshot = readObject<Snapshot>(snapshotKey, {});
   let snapshotSaved = !completed;
@@ -76,21 +95,6 @@ async function flushOutboxes(sessionId: string, completed = false): Promise<bool
     if (snapshotSaved && localStorage.getItem(snapshotKey) === sentSnapshot) {
       localStorage.removeItem(snapshotKey);
     }
-  }
-
-  const eventKey = storageKey(EVENT_OUTBOX_PREFIX, sessionId);
-  const events = readObject<Record<string, unknown>[]>(eventKey, []);
-  let eventsSaved = true;
-  for (const event of events) {
-    const result = await postResult({ action: "event", token, event });
-    if (!result) {
-      eventsSaved = false;
-      break;
-    }
-    const current = readObject<Record<string, unknown>[]>(eventKey, []);
-    const remaining = current.filter((saved) => saved.id !== event.id);
-    if (remaining.length) writeObject(eventKey, remaining);
-    else localStorage.removeItem(eventKey);
   }
   return snapshotSaved && eventsSaved;
 }
