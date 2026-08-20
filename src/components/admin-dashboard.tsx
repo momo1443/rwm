@@ -153,7 +153,7 @@ function IndividualSurvey({ answers }: { answers: SurveyAnswer | null }) {
     <section>
       <h3 className="text-sm font-semibold">量表与研究基线</h3>
       <div className="mt-3 space-y-3 rounded-lg border p-4">{scoredSubscales.map((subscale) => <ScoreBar key={subscale} label={subscale} value={scores[subscale]}/>)}</div>
-      <p className="mt-2 text-[11px] leading-5 text-muted-foreground">均为 1–5 分题项均值。AILS-CCS 四维度单列；研究自我效能和议题熟悉度属于研究基线，不并入 AILS 总分。</p>
+      <p className="mt-2 text-[11px] leading-5 text-muted-foreground">均为 1–5 分题项均值。AILS-CCS 四维度单列；研究任务自我效能和议题主观先验知识属于研究基线，不并入 AILS 总分。</p>
     </section>
     <section>
       <h3 className="text-sm font-semibold">逐题答案</h3>

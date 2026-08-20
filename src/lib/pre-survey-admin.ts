@@ -11,12 +11,13 @@ export type SurveyItemMeta = {
 const agreement = ["非常不同意", "不同意", "一般", "同意", "非常同意"];
 const confidence = ["完全没信心", "较没信心", "一般", "较有信心", "非常有信心"];
 const familiarity = ["完全不符合", "较不符合", "一般", "较符合", "非常符合"];
+const exposure = ["从未", "很少", "偶尔", "多次", "经常"];
 
 export const surveyItems: SurveyItemMeta[] = [
   { id: "ai_use_frequency", group: "AI 使用经验", label: "近 3 个月生成式 AI 使用频率", anchors: ["从未", "少于每周 1 次", "每周 1–2 次", "每周 3–4 次", "每周 5 天及以上"] },
-  { id: "ai_use_duration", group: "AI 使用经验", label: "持续使用生成式 AI 的时长", anchors: ["从未使用", "不足 3 个月", "3–6 个月", "7–12 个月", "超过 1 年"] },
   { id: "ai_task_breadth", group: "AI 使用经验", label: "使用 AI 的学习或科研任务类型数", anchors: ["0 类", "1 类", "2 类", "3 类", "4 类及以上"] },
   { id: "ai_research_frequency", group: "AI 使用经验", label: "研究写作中的 AI 使用频率", anchors: ["从未", "很少", "有时", "经常", "几乎每次任务"] },
+  { id: "topic_exposure", group: "AI 使用经验", label: "参加研究前接触议题相关案例的频率", anchors: exposure },
   { id: "ails_awareness_1", group: "AILS-CCS", subscale: "认知", label: "理解人工智能的定义", anchors: agreement },
   { id: "ails_awareness_2", group: "AILS-CCS", subscale: "认知", label: "熟悉人工智能基本原理", anchors: agreement },
   { id: "ails_awareness_3", group: "AILS-CCS", subscale: "认知", label: "理解人工智能如何感知并执行任务", anchors: agreement },
@@ -36,12 +37,14 @@ export const surveyItems: SurveyItemMeta[] = [
   { id: "research_self_efficacy_2", group: "研究基线", subscale: "研究任务自我效能", label: "比较不同问题框架的信心", anchors: confidence },
   { id: "research_self_efficacy_3", group: "研究基线", subscale: "研究任务自我效能", label: "提出假设并指出不确定性的信心", anchors: confidence },
   { id: "research_self_efficacy_4", group: "研究基线", subscale: "研究任务自我效能", label: "设计可行验证方案的信心", anchors: confidence },
-  { id: "topic_familiarity_1", group: "研究基线", subscale: "议题先验熟悉度", label: "熟悉所分配研究任务的议题", anchors: familiarity },
-  { id: "topic_familiarity_2", group: "研究基线", subscale: "议题先验熟悉度", label: "读过或讨论过相关案例", anchors: familiarity },
-  { id: "topic_familiarity_3", group: "研究基线", subscale: "议题先验熟悉度", label: "能解释所分配议题的基本问题", anchors: familiarity },
+  { id: "subjective_prior_knowledge_1", group: "研究基线", subscale: "议题主观先验知识", label: "对所分配议题了解较多", anchors: familiarity },
+  { id: "subjective_prior_knowledge_2", group: "研究基线", subscale: "议题主观先验知识", label: "总体自认了解该议题", anchors: familiarity },
+  { id: "subjective_prior_knowledge_3", group: "研究基线", subscale: "议题主观先验知识", label: "自认比一般大学生更了解", anchors: familiarity },
+  { id: "subjective_prior_knowledge_4", group: "研究基线", subscale: "议题主观先验知识", label: "自认能较熟悉地参与该议题讨论", anchors: familiarity },
+  { id: "subjective_prior_knowledge_5", group: "研究基线", subscale: "议题主观先验知识", label: "无需额外资料能说明该议题基本问题", anchors: familiarity },
 ];
 
-export const scoredSubscales = ["认知", "使用", "评价", "伦理", "研究任务自我效能", "议题先验熟悉度"] as const;
+export const scoredSubscales = ["认知", "使用", "评价", "伦理", "研究任务自我效能", "议题主观先验知识"] as const;
 
 export function mean(values: number[]) {
   return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;

@@ -360,21 +360,25 @@ function Survey({ locale, taskId, setScreen, t }: { locale:Locale;taskId:Researc
   const agreementZh=["非常不同意","不同意","一般","同意","非常同意"];
   const confidenceZh=["完全没信心","较没信心","一般","较有信心","非常有信心"];
   const familiarityZh=["完全不符合","较不符合","一般","较符合","非常符合"];
+  const exposureZh=["从未","很少","偶尔","多次","经常"];
   const agreementEn=["Strongly disagree","Disagree","Neutral","Agree","Strongly agree"];
   const confidenceEn=["No confidence","Low confidence","Moderate","High confidence","Complete confidence"];
   const familiarityEn=["Not at all","Slightly","Moderately","Very","Extremely"];
+  const exposureEn=["Never","Rarely","Occasionally","Several times","Often"];
 
   const groups:SurveyGroup[] = locale === "zh-CN" ? [
     {
       id:"ai_use_experience",
       title:"第 1 部分",
-      instruction:"请根据过去 3 个月的实际使用情况作答。",
-      source:"研究者编制的事实型协变量题项；时间窗口统一为过去 3 个月，不属于标准化心理量表。",
+      instruction:"请根据过去 3 个月的实际使用情况和参加本研究前的经历作答。",
+      source:"AI 使用题参考 Abbas, Jam, & Khan (2024) 的 ChatGPT Usage Scale 情境化改编；议题接触经历为研究者自编单题。均为事实型协变量，不合成总分。",
+      sourceUrl:"https://doi.org/10.1186/s41239-024-00444-7",
+      sourceLabel:"DOI: 10.1186/s41239-024-00444-7",
       items:[
-        {id:"ai_use_frequency",text:"过去 3 个月，你通常多频繁使用生成式 AI 工具（如 DeepSeek、ChatGPT、文心一言或通义千问）？",anchors:["从未","少于每周 1 次","每周 1–2 次","每周 3–4 次","每周 5 天及以上"]},
-        {id:"ai_use_duration",text:"截至目前，你持续使用生成式 AI 工具大约有多长时间？",anchors:["从未使用","不足 3 个月","3–6 个月","7–12 个月","超过 1 年"]},
+        {id:"ai_use_frequency",text:"过去 3 个月，你通常多频繁使用生成式 AI 工具（如 DeepSeek、ChatGPT或通义千问）？",anchors:["从未","少于每周 1 次","每周 1–2 次","每周 3–4 次","每周 5 天及以上"]},
         {id:"ai_task_breadth",text:"过去 3 个月，你使用过 AI 完成多少类学习或科研任务？任务类别包括：检索阅读、整理总结、写作修改、数据分析或编程。",anchors:["0 类","1 类","2 类","3 类","4 类及以上"]},
         {id:"ai_research_frequency",text:"过去 3 个月，你在课程论文、科研项目或研究写作中使用 AI 的频率如何？",anchors:["从未","很少","有时","经常","几乎每次任务"]},
+        {id:"topic_exposure",text:`在参加本研究前，你阅读、讨论或接触"${task.familiarity[locale]}"相关案例或材料的频率如何？`,anchors:exposureZh},
       ],
     },
     {
@@ -403,33 +407,47 @@ function Survey({ locale, taskId, setScreen, t }: { locale:Locale;taskId:Researc
       ],
     },
     {
-      id:"research_baseline",
-      title:"第 3 部分",
+      id:"research_self_efficacy",
+      title:"第 3 部分 A",
       instruction:"请根据你目前的真实感受和已有经验作答。",
-      source:"“研究任务自我效能”题项依据 RSES 的问题概念化维度进行任务化改编（Bieschke, Bishop, & Garcia, 1996）；“议题熟悉度”为研究者编制的协变量题项。二者均不按原量表总分计分。",
+      source:"依据 RSES 的问题概念化维度进行任务化改编（Bieschke, Bishop, & Garcia, 1996），不按原量表总分计分。",
       sourceUrl:"https://doi.org/10.1177/106907279600400104",
-      sourceLabel:"RSES 参考文献",
+      sourceLabel:"DOI: 10.1177/106907279600400104",
       items:[
         {id:"research_self_efficacy_1",subscale:"研究任务自我效能",text:"我有信心从相互冲突的材料中界定一个可研究的问题。",anchors:confidenceZh},
         {id:"research_self_efficacy_2",subscale:"研究任务自我效能",text:"我有信心比较至少两个不同的问题框架。",anchors:confidenceZh},
         {id:"research_self_efficacy_3",subscale:"研究任务自我效能",text:"我有信心提出可验证的假设，并指出仍不确定之处。",anchors:confidenceZh},
         {id:"research_self_efficacy_4",subscale:"研究任务自我效能",text:"我有信心在现实约束下设计可行的验证方案。",anchors:confidenceZh},
-        {id:"topic_familiarity_1",subscale:"议题先验熟悉度",text:`我熟悉${task.familiarity[locale]}。`,anchors:familiarityZh},
-        {id:"topic_familiarity_2",subscale:"议题先验熟悉度",text:`我曾阅读或讨论过${task.familiarity[locale]}的相关案例。`,anchors:familiarityZh},
-        {id:"topic_familiarity_3",subscale:"议题先验熟悉度",text:`即使不看额外资料，我也能解释${task.familiarity[locale]}的基本问题。`,anchors:familiarityZh},
+      ],
+    },
+    {
+      id:"subjective_prior_knowledge",
+      title:"第 3 部分 B",
+      instruction:"请根据你目前的真实感受和已有经验作答。",
+      source:"情境化改编自 Flynn & Goldsmith (1999) 的 Subjective Knowledge Scale（5 题单维度），已将目标领域替换为本研究议题；“曾阅读/讨论过相关案例”不计入本量表，已作为接触经历移至第 1 部分。",
+      sourceUrl:"https://doi.org/10.1016/S0148-2963(98)00057-5",
+      sourceLabel:"DOI: 10.1016/S0148-2963(98)00057-5",
+      items:[
+        {id:"subjective_prior_knowledge_1",subscale:"议题主观先验知识",text:`我对"${task.familiarity[locale]}"这一议题了解较多。`,anchors:familiarityZh},
+        {id:"subjective_prior_knowledge_2",subscale:"议题主观先验知识",text:`总体而言，我认为自己比较了解"${task.familiarity[locale]}"这一议题。`,anchors:familiarityZh},
+        {id:"subjective_prior_knowledge_3",subscale:"议题主观先验知识",text:"与一般大学生相比，我对这一议题了解得更多。",anchors:familiarityZh},
+        {id:"subjective_prior_knowledge_4",subscale:"议题主观先验知识",text:"如果讨论这一议题，我认为自己能够较熟悉地参与讨论。",anchors:familiarityZh},
+        {id:"subjective_prior_knowledge_5",subscale:"议题主观先验知识",text:"即使不查阅额外资料，我也能较清楚地说明这一议题的基本问题。",anchors:familiarityZh},
       ],
     },
   ] : [
     {
       id:"ai_use_experience",
       title:"Part 1",
-      instruction:"Answer based on your actual use during the past three months.",
-      source:"Researcher-authored factual covariates using a consistent three-month reference period; this is not a standardized psychological scale.",
+      instruction:"Answer based on your actual use during the past three months and your experience before joining this study.",
+      source:"AI-use items are a contextual adaptation of the ChatGPT Usage Scale (Abbas, Jam, & Khan, 2024); the topic-exposure item is a researcher-authored single item. All are factual covariates, not combined into a total score.",
+      sourceUrl:"https://doi.org/10.1186/s41239-024-00444-7",
+      sourceLabel:"DOI: 10.1186/s41239-024-00444-7",
       items:[
-        {id:"ai_use_frequency",text:"During the past three months, how often did you typically use generative-AI tools such as DeepSeek, ChatGPT, ERNIE Bot, or Qwen?",anchors:["Never","Less than weekly","1–2 times a week","3–4 times a week","5+ days a week"]},
-        {id:"ai_use_duration",text:"For approximately how long have you regularly used generative-AI tools?",anchors:["Never used","Under 3 months","3–6 months","7–12 months","Over 1 year"]},
+        {id:"ai_use_frequency",text:"During the past three months, how often did you typically use generative-AI tools such as DeepSeek, ChatGPT, or Qwen?",anchors:["Never","Less than weekly","1–2 times a week","3–4 times a week","5+ days a week"]},
         {id:"ai_task_breadth",text:"During the past three months, for how many types of learning or research tasks did you use AI? Categories include searching/reading, organizing/summarizing, writing/revising, and data analysis/coding.",anchors:["0 types","1 type","2 types","3 types","4+ types"]},
         {id:"ai_research_frequency",text:"During the past three months, how often did you use AI for course papers, research projects, or research writing?",anchors:["Never","Rarely","Sometimes","Often","Almost every task"]},
+        {id:"topic_exposure",text:`Before joining this study, how often had you read, discussed, or otherwise encountered cases or materials about "${task.familiarity.en}"?`,anchors:exposureEn},
       ],
     },
     {
@@ -458,20 +476,32 @@ function Survey({ locale, taskId, setScreen, t }: { locale:Locale;taskId:Researc
       ],
     },
     {
-      id:"research_baseline",
-      title:"Part 3",
+      id:"research_self_efficacy",
+      title:"Part 3A",
       instruction:"Answer based on your current feelings and prior experience.",
-      source:"Research-task self-efficacy items are task-specific adaptations informed by the RSES conceptualization dimension (Bieschke, Bishop, & Garcia, 1996). Topic-familiarity items are researcher-authored covariates; neither is scored as an original standardized scale.",
+      source:"Task-specific adaptation informed by the RSES conceptualization dimension (Bieschke, Bishop, & Garcia, 1996); not scored against the original scale's total.",
       sourceUrl:"https://doi.org/10.1177/106907279600400104",
-      sourceLabel:"RSES reference",
+      sourceLabel:"DOI: 10.1177/106907279600400104",
       items:[
         {id:"research_self_efficacy_1",subscale:"Research-task self-efficacy",text:"I am confident that I can define a researchable problem from conflicting materials.",anchors:confidenceEn},
         {id:"research_self_efficacy_2",subscale:"Research-task self-efficacy",text:"I am confident that I can compare at least two different problem framings.",anchors:confidenceEn},
         {id:"research_self_efficacy_3",subscale:"Research-task self-efficacy",text:"I am confident that I can form testable hypotheses and identify what remains uncertain.",anchors:confidenceEn},
         {id:"research_self_efficacy_4",subscale:"Research-task self-efficacy",text:"I am confident that I can design a feasible test under real-world constraints.",anchors:confidenceEn},
-        {id:"topic_familiarity_1",subscale:"Prior topic familiarity",text:`I am familiar with ${task.familiarity.en}.`,anchors:familiarityEn},
-        {id:"topic_familiarity_2",subscale:"Prior topic familiarity",text:`I have read or discussed cases involving ${task.familiarity.en}.`,anchors:familiarityEn},
-        {id:"topic_familiarity_3",subscale:"Prior topic familiarity",text:`Without extra materials, I can explain the basic issues in ${task.familiarity.en}.`,anchors:familiarityEn},
+      ],
+    },
+    {
+      id:"subjective_prior_knowledge",
+      title:"Part 3B",
+      instruction:"Answer based on your current feelings and prior experience.",
+      source:"Contextual adaptation of the Subjective Knowledge Scale (Flynn & Goldsmith, 1999; 5 items, single dimension), with the target domain replaced by this study's topic. \"Have read or discussed related cases\" is not part of this scale — it has moved to Part 1 as a topic-exposure item.",
+      sourceUrl:"https://doi.org/10.1016/S0148-2963(98)00057-5",
+      sourceLabel:"DOI: 10.1016/S0148-2963(98)00057-5",
+      items:[
+        {id:"subjective_prior_knowledge_1",subscale:"Subjective prior topic knowledge",text:`I know a lot about "${task.familiarity.en}".`,anchors:familiarityEn},
+        {id:"subjective_prior_knowledge_2",subscale:"Subjective prior topic knowledge",text:`Overall, I consider myself fairly knowledgeable about "${task.familiarity.en}".`,anchors:familiarityEn},
+        {id:"subjective_prior_knowledge_3",subscale:"Subjective prior topic knowledge",text:"Compared with the average university student, I know more about this topic.",anchors:familiarityEn},
+        {id:"subjective_prior_knowledge_4",subscale:"Subjective prior topic knowledge",text:"If this topic came up in discussion, I could take part with reasonable familiarity.",anchors:familiarityEn},
+        {id:"subjective_prior_knowledge_5",subscale:"Subjective prior topic knowledge",text:"Even without consulting additional materials, I could clearly explain the basic issues of this topic.",anchors:familiarityEn},
       ],
     },
   ];
@@ -479,7 +509,7 @@ function Survey({ locale, taskId, setScreen, t }: { locale:Locale;taskId:Researc
   const [responses,setResponses]=useState<Record<string,number>>({});
   const complete=flatItems.every(item=>responses[item.id]);
   return <CenteredShell title={t.pretitle}>
-    <p className="mb-7 text-sm leading-6 text-muted-foreground">{locale==="zh-CN"?"本页共 26 道题。请根据真实情况作答，每题选择一个最符合你的选项。":"This page contains 26 questions. Answer based on your actual situation and select the option that fits you best."}</p>
+    <p className="mb-7 text-sm leading-6 text-muted-foreground">{locale==="zh-CN"?"本页共 28 道题。请根据真实情况作答，每题选择一个最符合你的选项。":"This page contains 28 questions. Answer based on your actual situation and select the option that fits you best."}</p>
     <div className="space-y-8">
       {groups.map(group=><section key={group.id} className="rounded-xl border bg-[#fcfcfd] p-5">
         <h2 className="font-semibold">{group.title}</h2>
