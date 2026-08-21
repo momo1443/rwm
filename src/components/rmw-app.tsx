@@ -160,7 +160,7 @@ export function RmwApp() {
         <div className="max-w-md"><SquaresFour size={42} className="mx-auto mb-5 text-primary" /><h1 className="text-2xl font-semibold">{t.desktop}</h1><p className="mt-3 text-muted-foreground">{t.desktopText}</p></div>
       </div>
       <main className="desktop-app min-h-screen">
-        {screen === "landing" && <Landing locale={locale} setLocale={setLocale} participantId={participantId} condition={condition} setCondition={setCondition} taskId={taskId} setTaskId={setTaskId} testMode={testMode} startError={startError} onStart={async (overrideTaskId) => {
+        {screen === "landing" && <Landing locale={locale} setLocale={setLocale} participantId={participantId} condition={condition} setCondition={setCondition} taskId={taskId} setTaskId={setTaskId} testMode={testMode} setTestMode={setTestMode} startError={startError} onStart={async (overrideTaskId) => {
           setStartError("");
           const sessionId = beginStudySession();
           const requestedTaskId = overrideTaskId ?? taskId;
@@ -257,6 +257,7 @@ function Landing({
   taskId,
   setTaskId,
   testMode,
+  setTestMode,
   startError,
   onStart,
   t,
@@ -269,6 +270,7 @@ function Landing({
   taskId: ResearchTaskId;
   setTaskId: (taskId: ResearchTaskId) => void;
   testMode: boolean;
+  setTestMode: (value: boolean) => void;
   startError: string;
   onStart: (overrideTaskId?: ResearchTaskId) => Promise<void>;
   t: typeof copy[Locale];
@@ -283,7 +285,8 @@ function Landing({
         <label className="text-sm font-semibold" htmlFor="anonymous-id">{t.anonymous}</label>
         <div id="anonymous-id" className="mt-3 rounded-xl border bg-muted/35 px-4 py-3 font-mono text-base font-semibold tracking-wider text-primary">{participantId || (locale==="zh-CN"?"正在生成…":"Generating…")}</div>
         <p className="mt-2 text-xs text-muted-foreground">{locale==="zh-CN"?"编号由系统自动生成，无需填写。":"Generated automatically; no entry is required."}</p>
-        {testMode ? <><fieldset className="mt-7">
+        {!testMode && <button type="button" onClick={()=>setTestMode(true)} className="mt-4 text-xs font-medium text-primary underline-offset-2 hover:underline">{locale==="zh-CN"?"研究者模式：自己选择任务与方式":"Researcher mode: choose task and condition yourself"}</button>}
+        {testMode ? <><div className="mt-5 flex items-center justify-between rounded-lg bg-amber-50 px-3 py-2"><p className="text-[11px] leading-4 text-amber-900">{locale==="zh-CN"?"研究者模式：这次运行会标记为测试数据，不计入正式分析。":"Researcher mode: this run is flagged as test data and excluded from formal analysis."}</p><button type="button" onClick={()=>setTestMode(false)} className="ml-3 shrink-0 text-[11px] font-medium text-amber-900 underline-offset-2 hover:underline">{locale==="zh-CN"?"退出":"Exit"}</button></div><fieldset className="mt-5">
           <legend className="text-sm font-semibold">{locale==="zh-CN"?"选择研究任务":"Choose a research task"}</legend>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">{locale==="zh-CN"?"正式实验由系统随机分配；测试时可保留随机，或手动固定任务以便针对某个方式收集数据。":"Formal studies assign this randomly. For testing, keep it random or fix a task manually to collect data for a specific condition."}</p>
           <div className="mt-3 grid gap-2">
