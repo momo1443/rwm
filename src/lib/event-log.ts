@@ -37,6 +37,8 @@ export function getOrCreateParticipantId() {
 
 export function beginStudySession() {
   if (typeof window === "undefined") return "";
+  const existing = sessionStorage.getItem(SESSION_KEY);
+  if (existing) return existing;
   const sessionId = crypto.randomUUID();
   sessionStorage.setItem(SESSION_KEY, sessionId);
   return sessionId;
