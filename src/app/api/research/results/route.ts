@@ -24,11 +24,11 @@ const reviewSchema = z.object({
   reviewNote: z.string().trim().max(1000).nullable().optional(),
 });
 const rubricScoresSchema = z.object({
-  goal_continuity: z.number().int().min(1).max(7),
-  reasoning_position: z.number().int().min(1).max(7),
-  evidence_integration: z.number().int().min(1).max(7),
-  uncertainty_preservation: z.number().int().min(1).max(7),
-  actionable_next_step: z.number().int().min(1).max(7),
+  goal_continuity: z.number().int().min(0).max(4),
+  reasoning_position: z.number().int().min(0).max(4),
+  evidence_integration: z.number().int().min(0).max(4),
+  uncertainty_preservation: z.number().int().min(0).max(4),
+  actionable_next_step: z.number().int().min(0).max(4),
 }).strict();
 const blindReviewSchema = z.object({
   blindId: z.string().regex(/^B-[A-F0-9]{12}$/),

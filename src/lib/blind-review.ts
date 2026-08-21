@@ -19,19 +19,17 @@ export type BlindReviewScoreSet = {
 };
 
 export const emptyBlindReviewScores: BlindReviewScores = {
-  goal_continuity: 1,
-  reasoning_position: 1,
-  evidence_integration: 1,
-  uncertainty_preservation: 1,
-  actionable_next_step: 1,
+  goal_continuity: 0,
+  reasoning_position: 0,
+  evidence_integration: 0,
+  uncertainty_preservation: 0,
+  actionable_next_step: 0,
 };
 
 export const blindReviewAnchors = [
-  "1 · 无法判断或完全缺失",
-  "2 · 明显较差",
-  "3 · 较差",
-  "4 · 部分达到",
-  "5 · 基本达到",
-  "6 · 较好地达到",
-  "7 · 明确且充分达到",
+  "0 · 无法判断或完全缺失",
+  "1 · 明显较差",
+  "2 · 部分达到",
+  "3 · 基本达到",
+  "4 · 明确且充分达到",
 ] as const;
