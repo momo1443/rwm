@@ -110,6 +110,7 @@ export function RmwApp() {
   const [problemState, setProblemState] = useState<ProblemStateSnapshot | null>(() => readProblemStateSnapshot());
   const [recoveryAssessment, setRecoveryAssessment] = useState<RecoveryAssessment>(() => createRecoveryAssessment("city_policy"));
   const [completionStatus, setCompletionStatus] = useState<"saving" | "saved" | "error">("saving");
+  const startingRef = useRef(false);
   const t = copy[locale];
 
   useEffect(() => {
@@ -160,29 +161,35 @@ export function RmwApp() {
       </div>
       <main className="desktop-app min-h-screen">
         {screen === "landing" && <Landing locale={locale} setLocale={setLocale} participantId={participantId} startError={startError} onStart={async (chosenCondition) => {
+          if (startingRef.current) return;
+          startingRef.current = true;
           setStartError("");
-          const sessionId = beginStudySession();
-          const requestedCondition = testMode ? condition : chosenCondition;
-          const assignmentMode = testMode ? "manual" : "manual_condition";
-          const assignment = await startRemoteStudySession({ sessionId, participantCode: participantId, locale, condition: requestedCondition, taskId, assignmentMode });
-          if (!assignment || !isResearchTaskId(assignment.taskId) || !["rmw", "rmw_no_summary", "summary_only"].includes(assignment.condition)) {
-            setStartError(locale === "zh-CN" ? "无法创建本次运行，请检查网络后重试。" : "Could not create this study run. Check your connection and try again.");
-            return;
+          try {
+            const sessionId = beginStudySession();
+            const requestedCondition = testMode ? condition : chosenCondition;
+            const assignmentMode = testMode ? "manual" : "manual_condition";
+            const assignment = await startRemoteStudySession({ sessionId, participantCode: participantId, locale, condition: requestedCondition, taskId, assignmentMode });
+            if (!assignment || !isResearchTaskId(assignment.taskId) || !["rmw", "rmw_no_summary", "summary_only"].includes(assignment.condition)) {
+              setStartError(locale === "zh-CN" ? "无法创建本次运行，请检查网络后重试。" : "Could not create this study run. Check your connection and try again.");
+              return;
+            }
+            const assignedCondition = assignment.condition as Condition;
+            const assignedTaskId = assignment.taskId;
+            const task = getResearchTask(assignedTaskId);
+            setCondition(assignedCondition);
+            setTaskId(assignedTaskId);
+            eventLog("consent_submitted", { locale, access: "anonymous", participantId, condition: assignedCondition }, { stage: "consent" });
+            setCompletionStatus("saving");
+            setMemo(task.starterMemo[locale]);
+            setChat([{ role: "assistant", text: task.assistantIntro[locale] }]);
+            setProblemState(null);
+            setRecoveryAssessment(createRecoveryAssessment(assignedTaskId));
+            saveProblemStateSnapshot(null);
+            eventLog("research_task_started", { taskId: assignedTaskId, assignment: assignmentMode === "manual" ? "manual_test" : "condition_chosen_task_balanced", participantId, condition: assignedCondition }, { stage: "task_setup" });
+            setScreen("brief");
+          } finally {
+            startingRef.current = false;
           }
-          const assignedCondition = assignment.condition as Condition;
-          const assignedTaskId = assignment.taskId;
-          const task = getResearchTask(assignedTaskId);
-          setCondition(assignedCondition);
-          setTaskId(assignedTaskId);
-          eventLog("consent_submitted", { locale, access: "anonymous", participantId, condition: assignedCondition }, { stage: "consent" });
-          setCompletionStatus("saving");
-          setMemo(task.starterMemo[locale]);
-          setChat([{ role: "assistant", text: task.assistantIntro[locale] }]);
-          setProblemState(null);
-          setRecoveryAssessment(createRecoveryAssessment(assignedTaskId));
-          saveProblemStateSnapshot(null);
-          eventLog("research_task_started", { taskId: assignedTaskId, assignment: assignmentMode === "manual" ? "manual_test" : "condition_chosen_task_balanced", participantId, condition: assignedCondition }, { stage: "task_setup" });
-          setScreen("brief");
         }} t={t} />}
         {screen === "brief" && <TaskBrief locale={locale} taskId={taskId} setScreen={setScreen} />}
         {screen === "survey" && <Survey locale={locale} taskId={taskId} setScreen={setScreen} t={t} />}
@@ -265,6 +272,7 @@ function Landing({
 }) {
   const [consent, setConsent] = useState(false);
   const [conditionChoice, setConditionChoice] = useState<Condition | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   return <div className="min-h-screen bg-[#f8f7f3]">
     <header className="mx-auto flex h-20 max-w-6xl items-center justify-between px-8"><Brand /><LanguageChoice locale={locale} setLocale={setLocale} /></header>
     <section className="mx-auto grid max-w-6xl grid-cols-[1.08fr_.92fr] items-center gap-16 px-8 py-20">
@@ -288,7 +296,7 @@ function Landing({
           </div>
         </fieldset>
         <label className="mt-7 flex cursor-pointer items-start gap-3 text-sm leading-6"><input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)} className="mt-1 size-4 accent-[var(--primary)]"/><span>{t.consent}</span></label>
-        <TimedButton seconds={5} ready={consent&&Boolean(participantId)&&Boolean(conditionChoice)} locale={locale} label={t.enter} blockedLabel={!conditionChoice?(locale==="zh-CN"?"请先选择实验方式":"Choose a condition first"):(locale==="zh-CN"?"请勾选同意":"Provide consent to continue")} onClick={()=>conditionChoice&&onStart(conditionChoice)} className="mt-7 h-12 w-full" />
+        <TimedButton seconds={5} ready={consent&&Boolean(participantId)&&Boolean(conditionChoice)&&!submitting} locale={locale} label={t.enter} blockedLabel={submitting?(locale==="zh-CN"?"正在创建本次运行…":"Setting up your session…"):!conditionChoice?(locale==="zh-CN"?"请先选择实验方式":"Choose a condition first"):(locale==="zh-CN"?"请勾选同意":"Provide consent to continue")} onClick={()=>{if(!conditionChoice||submitting)return;setSubmitting(true);onStart(conditionChoice).finally(()=>setSubmitting(false));}} className="mt-7 h-12 w-full" />
         {startError && <p role="alert" className="mt-3 text-center text-xs text-destructive">{startError}</p>}
         <p className="mt-3 text-center text-[11px] text-muted-foreground">{locale==="zh-CN"?"按钮将在阅读时间结束且信息完整后开放。":"The button unlocks after the reading time and required fields are complete."}</p>
       </div>
