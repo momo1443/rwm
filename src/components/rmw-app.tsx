@@ -162,10 +162,11 @@ export function RmwApp() {
         <div className="max-w-md"><SquaresFour size={42} className="mx-auto mb-5 text-primary" /><h1 className="text-2xl font-semibold">{t.desktop}</h1><p className="mt-3 text-muted-foreground">{t.desktopText}</p></div>
       </div>
       <main className="desktop-app min-h-screen">
-        {screen === "landing" && <Landing locale={locale} setLocale={setLocale} participantId={participantId} condition={condition} setCondition={setCondition} taskId={taskId} setTaskId={setTaskId} testMode={testMode} startError={startError} onStart={async () => {
+        {screen === "landing" && <Landing locale={locale} setLocale={setLocale} participantId={participantId} condition={condition} setCondition={setCondition} taskId={taskId} setTaskId={setTaskId} testMode={testMode} startError={startError} onStart={async (overrideTaskId) => {
           setStartError("");
           const sessionId = beginStudySession();
-          const assignment = await startRemoteStudySession({ sessionId, participantCode: participantId, locale, condition, taskId, assignmentMode: testMode ? "manual" : "auto" });
+          const requestedTaskId = overrideTaskId ?? taskId;
+          const assignment = await startRemoteStudySession({ sessionId, participantCode: participantId, locale, condition, taskId: requestedTaskId, assignmentMode: testMode ? "manual" : "auto" });
           if (!assignment || !isResearchTaskId(assignment.taskId) || !["rmw", "rmw_no_summary", "summary_only"].includes(assignment.condition)) {
             setStartError(locale === "zh-CN" ? "无法创建本次运行，请检查网络后重试。" : "Could not create this study run. Check your connection and try again.");
             return;
@@ -272,10 +273,11 @@ function Landing({
   setTaskId: (taskId: ResearchTaskId) => void;
   testMode: boolean;
   startError: string;
-  onStart: () => Promise<void>;
+  onStart: (overrideTaskId?: ResearchTaskId) => Promise<void>;
   t: typeof copy[Locale];
 }) {
   const [consent, setConsent] = useState(false);
+  const [taskRandom, setTaskRandom] = useState(true);
   return <div className="min-h-screen bg-[#f8f7f3]">
     <header className="mx-auto flex h-20 max-w-6xl items-center justify-between px-8"><Brand /><LanguageChoice locale={locale} setLocale={setLocale} /></header>
     <section className="mx-auto grid max-w-6xl grid-cols-[1.08fr_.92fr] items-center gap-16 px-8 py-20">
@@ -286,10 +288,14 @@ function Landing({
         <p className="mt-2 text-xs text-muted-foreground">{locale==="zh-CN"?"编号由系统自动生成，无需填写。":"Generated automatically; no entry is required."}</p>
         {testMode ? <><fieldset className="mt-7">
           <legend className="text-sm font-semibold">{locale==="zh-CN"?"选择研究任务":"Choose a research task"}</legend>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">{locale==="zh-CN"?"正式实验可由系统随机分配；此处保留选择功能用于研究者测试。":"Formal studies can assign this randomly; selection remains available for researcher testing."}</p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">{locale==="zh-CN"?"正式实验由系统随机分配；测试时可保留随机，或手动固定任务以便针对某个方式收集数据。":"Formal studies assign this randomly. For testing, keep it random or fix a task manually to collect data for a specific condition."}</p>
           <div className="mt-3 grid gap-2">
-            {researchTasks.map(task=><label key={task.id} className={`cursor-pointer rounded-xl border px-3 py-3 text-sm transition ${taskId===task.id?"border-primary bg-secondary/65 text-primary":"bg-white hover:border-primary/45"}`}>
-              <input type="radio" name="task" value={task.id} checked={taskId===task.id} onChange={()=>setTaskId(task.id)} className="mr-2 accent-[var(--primary)]"/>
+            <label className={`cursor-pointer rounded-xl border px-3 py-3 text-sm transition ${taskRandom?"border-primary bg-secondary/65 text-primary":"bg-white hover:border-primary/45"}`}>
+              <input type="radio" name="task" value="random" checked={taskRandom} onChange={()=>setTaskRandom(true)} className="mr-2 accent-[var(--primary)]"/>
+              <span className="font-medium">{locale==="zh-CN"?"随机（每次进入随机挑选）":"Random (picked fresh each run)"}</span>
+            </label>
+            {researchTasks.map(task=><label key={task.id} className={`cursor-pointer rounded-xl border px-3 py-3 text-sm transition ${!taskRandom&&taskId===task.id?"border-primary bg-secondary/65 text-primary":"bg-white hover:border-primary/45"}`}>
+              <input type="radio" name="task" value={task.id} checked={!taskRandom&&taskId===task.id} onChange={()=>{setTaskRandom(false);setTaskId(task.id)}} className="mr-2 accent-[var(--primary)]"/>
               <span className="font-medium">{task.label[locale]}</span>
             </label>)}
           </div>
@@ -311,7 +317,7 @@ function Landing({
           {locale === "zh-CN" ? "正式实验的任务与方式由系统随机、均衡分配，参与者无需选择。" : "For the formal study, the task and method are randomly balanced by the system; participants do not choose them."}
         </div>}
         <label className="mt-7 flex cursor-pointer items-start gap-3 text-sm leading-6"><input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)} className="mt-1 size-4 accent-[var(--primary)]"/><span>{t.consent}</span></label>
-        <TimedButton seconds={5} ready={consent&&Boolean(participantId)} locale={locale} label={t.enter} blockedLabel={locale==="zh-CN"?"请勾选同意":"Provide consent to continue"} onClick={onStart} className="mt-7 h-12 w-full" />
+        <TimedButton seconds={5} ready={consent&&Boolean(participantId)} locale={locale} label={t.enter} blockedLabel={locale==="zh-CN"?"请勾选同意":"Provide consent to continue"} onClick={()=>onStart(testMode&&taskRandom?researchTasks[Math.floor(Math.random()*researchTasks.length)].id:undefined)} className="mt-7 h-12 w-full" />
         {startError && <p role="alert" className="mt-3 text-center text-xs text-destructive">{startError}</p>}
         <p className="mt-3 text-center text-[11px] text-muted-foreground">{locale==="zh-CN"?"按钮将在阅读时间结束且信息完整后开放。":"The button unlocks after the reading time and required fields are complete."}</p>
       </div>
