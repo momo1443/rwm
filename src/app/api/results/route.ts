@@ -75,7 +75,7 @@ const requestSchema = z.discriminatedUnion("action", [
     locale: z.enum(["zh-CN", "en"]),
     condition: z.enum(["rmw", "rmw_no_summary", "summary_only"]),
     taskId: z.enum(researchTaskIds),
-    assignmentMode: z.enum(["auto", "manual"]).default("auto"),
+    assignmentMode: z.enum(["auto", "manual", "manual_condition"]).default("auto"),
     token: z.string().min(1).max(2000).optional(),
   }),
   z.object({ action: z.literal("event"), token: z.string().min(1).max(2000), event: eventSchema }),
@@ -91,7 +91,11 @@ async function participantFromToken(token: string, secret: string) {
   return {
     participantCode: payload.participantCode,
     sessionId: payload.sessionId,
-    assignmentMode: payload.assignmentMode === "manual" ? "manual" as const : "auto" as const,
+    assignmentMode: payload.assignmentMode === "manual"
+      ? "manual" as const
+      : payload.assignmentMode === "manual_condition"
+        ? "manual_condition" as const
+        : "auto" as const,
   };
 }
 
@@ -118,6 +122,28 @@ async function balancedAssignment() {
   const minimum = Math.min(...counts.map((cell) => cell.count));
   const leastFilled = counts.filter((cell) => cell.count === minimum);
   return leastFilled[randomInt(leastFilled.length)];
+}
+
+async function balancedTaskAssignment(condition: (typeof activeConditions)[number]) {
+  const database = await readAllResults();
+  const activeCutoff = Date.now() - 12 * 60 * 60 * 1000;
+  const activeRows = database.results.filter((result) => {
+    if (result.analysis_status === "trashed" || result.condition !== condition) return false;
+    const isCurrentCompletedCohort = result.status === "completed"
+      && result.task_assessment
+      && typeof result.task_assessment === "object"
+      && "version" in result.task_assessment
+      && result.task_assessment.version === "reasoning-recovery-v2";
+    const isCurrentActiveRun = result.status === "started" && new Date(result.created_at).getTime() >= activeCutoff;
+    return Boolean(isCurrentCompletedCohort || isCurrentActiveRun);
+  });
+  const counts = researchTaskIds.map((taskId) => ({
+    taskId,
+    count: activeRows.filter((row) => row.task_id === taskId).length,
+  }));
+  const minimum = Math.min(...counts.map((cell) => cell.count));
+  const leastFilled = counts.filter((cell) => cell.count === minimum);
+  return leastFilled[randomInt(leastFilled.length)].taskId;
 }
 
 export async function POST(request: Request) {
@@ -151,6 +177,8 @@ export async function POST(request: Request) {
           const assigned = await balancedAssignment();
           condition = assigned.condition;
           taskId = assigned.taskId;
+        } else if (assignmentMode === "manual_condition") {
+          taskId = await balancedTaskAssignment(condition);
         }
         await createParticipant({ sessionId, participantCode, locale, condition, taskId });
       }
