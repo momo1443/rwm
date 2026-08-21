@@ -25,6 +25,7 @@ export interface ProblemStateAction {
 const STORAGE_KEY = "rmw-demo-events";
 const PARTICIPANT_KEY = "rmw-participant-id";
 const SESSION_KEY = "rmw-study-session-id";
+const TOKEN_SESSION_KEY = "rmw-participant-token-session-id";
 
 export function getOrCreateParticipantId() {
   if (typeof window === "undefined") return "";
@@ -38,7 +39,8 @@ export function getOrCreateParticipantId() {
 export function beginStudySession() {
   if (typeof window === "undefined") return "";
   const existing = sessionStorage.getItem(SESSION_KEY);
-  if (existing) return existing;
+  const confirmed = sessionStorage.getItem(TOKEN_SESSION_KEY);
+  if (existing && existing === confirmed) return existing;
   const sessionId = crypto.randomUUID();
   sessionStorage.setItem(SESSION_KEY, sessionId);
   return sessionId;
