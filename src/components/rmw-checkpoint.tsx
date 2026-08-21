@@ -29,6 +29,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
+import { GuidedTourOverlay } from "@/components/guided-tour";
 import { eventLog, readProblemStateActions } from "@/lib/event-log";
 import { problemStateToContinuousSummary } from "@/lib/problem-state";
 import type { ResearchTaskId } from "@/lib/research-task";
@@ -337,7 +338,7 @@ function CheckpointNetwork({
 }
 
 function CheckpointGuide({ locale, open, onOpenChange }: { locale: Locale; open: boolean; onOpenChange: (open: boolean) => void }) {
-  const allSteps = useMemo(() => locale === "zh-CN" ? [
+  const steps = useMemo(() => locale === "zh-CN" ? [
     { target: "checkpoint-timeline", title: "保存阶段时间轴", body: "这里展示实验流程。您当前处于第 2 阶段「保存窗口 (Save Window)」，系统正结合第一阶段的记录归纳 Problem State。" },
     { target: "checkpoint-goals", title: "目标结构分布", body: "此处按层级汇总主目标、活跃子目标、挂起分支与弃用路径。它们构成了研究推理的核心主干。" },
     { target: "checkpoint-state", title: "候选 Problem State 列表", body: "由 DeepSeek 提取的推理卡片。每张卡片对应一个推理要点，左侧边框颜色代表其认知状态（Active / Uncertain / Expired）。" },
@@ -355,102 +356,14 @@ function CheckpointGuide({ locale, open, onOpenChange }: { locale: Locale; open:
     { target: "checkpoint-footer", title: "Save & Progress Control", body: "Displays countdown timer or completion status. In test mode or when finished, proceed to the next stage using the right button." },
   ], [locale]);
 
-  const [availableSteps, setAvailableSteps] = useState(allSteps);
-  const [index, setIndex] = useState(0);
-  const [rect, setRect] = useState<DOMRect | null>(null);
-
-  // Filter steps based on elements currently present in DOM
-  useEffect(() => {
-    if (!open) return;
-    const frame = requestAnimationFrame(() => {
-      const valid = allSteps.filter((s) => Boolean(document.querySelector(`[data-tour="${s.target}"]`)));
-      if (valid.length > 0) {
-        setAvailableSteps(valid);
-        setIndex(0);
-      }
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [allSteps, open]);
-
-  const step = availableSteps[Math.min(index, availableSteps.length - 1)] || availableSteps[0];
-  const stepTarget = step?.target;
-
-  useEffect(() => {
-    if (!open || !stepTarget) return;
-    const update = () => {
-      const element = document.querySelector<HTMLElement>(`[data-tour="${stepTarget}"]`);
-      if (element) {
-        element.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
-        setRect(element.getBoundingClientRect());
-      } else {
-        setRect(null);
-      }
-    };
-    update();
-    const timer = setTimeout(update, 200);
-    window.addEventListener("resize", update);
-    window.addEventListener("scroll", update, true);
-    return () => {
-      clearTimeout(timer);
-      window.removeEventListener("resize", update);
-      window.removeEventListener("scroll", update, true);
-    };
-  }, [open, stepTarget]);
-
-  if (!open || !step || !rect) return null;
-
-  const panelWidth = 340;
-  const preferredLeft = rect.right + 24;
-  const panelLeft = preferredLeft + panelWidth <= window.innerWidth - 24
-    ? preferredLeft
-    : Math.max(24, rect.left - panelWidth - 24);
-  const panelTop = Math.max(86, Math.min(window.innerHeight - 290, rect.top + 16));
-
-  const finish = () => {
-    setIndex(0);
-    onOpenChange(false);
-  };
-
-  return <div className="fixed inset-0 z-[80]" role="dialog" aria-modal="true" aria-label={locale === "zh-CN" ? "保存窗口全屏解释浮窗" : "Save window guided tour overlay"}>
-    <div
-      className="absolute rounded-2xl border-2 border-white/95 transition-all duration-300"
-      style={{
-        left: Math.max(8, rect.left - 6),
-        top: Math.max(8, rect.top - 6),
-        width: rect.width + 12,
-        height: rect.height + 12,
-        boxShadow: "0 0 0 9999px rgba(15, 19, 32, .76)",
-      }}
-    />
-    <aside className="absolute w-[340px] rounded-2xl border border-white/20 bg-white p-6 shadow-2xl transition-all duration-300" style={{ left: panelLeft, top: panelTop }}>
-      <div className="flex items-center justify-between">
-        <Badge variant="secondary">{index + 1} / {availableSteps.length}</Badge>
-        <span className="text-[10px] font-semibold uppercase tracking-[.16em] text-muted-foreground">{locale === "zh-CN" ? "模块解释" : "Block guide"}</span>
-      </div>
-      <h2 className="mt-4 text-xl font-semibold tracking-tight">{step.title}</h2>
-      <p className="mt-3 text-sm leading-6 text-muted-foreground">{step.body}</p>
-      <div className="mt-6 flex items-center justify-between">
-        <Button variant="ghost" disabled={index === 0} onClick={() => setIndex((current) => current - 1)}>
-          {locale === "zh-CN" ? "上一步" : "Back"}
-        </Button>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={finish}>
-            {locale === "zh-CN" ? "退出" : "Exit"}
-          </Button>
-          <Button className="h-10 px-4" onClick={() => {
-            if (index < availableSteps.length - 1) {
-              setIndex((current) => current + 1);
-            } else {
-              finish();
-            }
-          }}>
-            {index === availableSteps.length - 1 ? (locale === "zh-CN" ? "完成" : "Done") : (locale === "zh-CN" ? "下一步" : "Next")}
-            <ArrowRight size={16} />
-          </Button>
-        </div>
-      </div>
-    </aside>
-  </div>;
+  return <GuidedTourOverlay
+    locale={locale}
+    open={open}
+    onOpenChange={onOpenChange}
+    steps={steps}
+    ariaLabel={locale === "zh-CN" ? "保存窗口全屏解释浮窗" : "Save window guided tour overlay"}
+    badgeLabel={locale === "zh-CN" ? "模块解释" : "Block guide"}
+  />;
 }
 
 export function RmwCheckpoint({
@@ -623,8 +536,8 @@ export function RmwCheckpoint({
         </div>
         <Badge variant="secondary" className="mt-4">{locale === "zh-CN" ? "方式二 · 用户自主笔记基线" : "Method 2 · Self-Notes Baseline"}</Badge>
         <h2 className="mt-4 text-center text-xl font-semibold">{locale === "zh-CN" ? "写下中断后需要看到的恢复笔记" : "Write the notes you want available after interruption"}</h2>
-        <p className="mx-auto mt-3 max-w-2xl text-center text-sm leading-7 text-muted-foreground">{locale === "zh-CN" ? "请独立写下目标、当前判断、约束、已排除方向、不确定性和下一步。这份文字会在恢复时原样呈现，不会由 AI 改写。" : "Independently record the goal, current position, constraint, rejected direction, uncertainty, and next step. These notes will be shown verbatim after interruption."}</p>
-        <Textarea className="mx-auto mt-5 min-h-44 max-w-3xl text-sm leading-6" value={participantNotes} onChange={(event) => setParticipantNotes(event.target.value)} placeholder={locale === "zh-CN" ? "中断前用户笔记（至少 30 字）……" : "Pre-interruption self-notes (at least 30 characters)…"} />
+        <p className="mx-auto mt-3 max-w-2xl text-center text-sm leading-7 text-muted-foreground">{locale === "zh-CN" ? "请写下一段你希望在中断后重新开始任务时看到的笔记。内容和组织方式由你自己决定。中断后系统会原样呈现这段笔记，不会由 AI 修改。" : "Write a note in whatever form and organization you like — this is what you want to see if you resume the task after the interruption. It will be shown to you verbatim after interruption; the system will not generate or rewrite it with AI."}</p>
+        <Textarea className="mx-auto mt-5 min-h-44 max-w-3xl text-sm leading-6" value={participantNotes} onChange={(event) => setParticipantNotes(event.target.value)} placeholder={locale === "zh-CN" ? "中断前恢复笔记（至少 30 字）……" : "Pre-interruption recovery notes (at least 30 characters)…"} />
         <p className="mx-auto mt-2 max-w-3xl text-right font-mono text-[10px] text-muted-foreground">{participantNotes.trim().length} / 30+</p>
       </section> : condition === "summary_only" ? <section data-tour="checkpoint-summary-baseline" className="rounded-2xl border bg-white px-8 py-10 shadow-[0_12px_40px_rgba(35,43,70,.05)]">
         <div className="mx-auto grid size-14 place-items-center rounded-2xl bg-indigo-50 text-primary">
@@ -722,16 +635,18 @@ export function RmwCheckpoint({
 }
 
 const letterSequence = ["A", "C", "A", "B", "D", "B", "C", "D"];
+// Blue / orange / purple: no red-green pair, so the task stays valid for
+// participants with red-green color-vision deficiency (the most common type).
 const colorTrials = [
-  { word: "蓝", color: "red", answer: "red" },
-  { word: "绿", color: "blue", answer: "blue" },
-  { word: "红", color: "green", answer: "green" },
+  { word: "蓝", color: "orange", answer: "orange" },
+  { word: "紫", color: "blue", answer: "blue" },
+  { word: "橙", color: "purple", answer: "purple" },
   { word: "蓝", color: "blue", answer: "blue" },
-  { word: "红", color: "red", answer: "red" },
-  { word: "绿", color: "green", answer: "green" },
+  { word: "橙", color: "orange", answer: "orange" },
+  { word: "紫", color: "purple", answer: "purple" },
 ] as const;
-const colorCss = { red: "text-red-600", blue: "text-blue-600", green: "text-emerald-600" };
-const colorWordEn: Record<string, string> = { 红: "RED", 蓝: "BLUE", 绿: "GREEN" };
+const colorCss = { orange: "text-orange-600", blue: "text-blue-600", purple: "text-purple-600" };
+const colorWordEn: Record<string, string> = { 蓝: "BLUE", 橙: "ORANGE", 紫: "PURPLE" };
 
 export function InterruptionTask({ locale, onComplete }: { locale: Locale; fastMode: boolean; onComplete: () => void }) {
   const t = labels[locale];
@@ -756,7 +671,7 @@ export function InterruptionTask({ locale, onComplete }: { locale: Locale; fastM
     setIndex(2);
     setCorrect(0);
   };
-  const answerColor = (answer: "red" | "blue" | "green") => {
+  const answerColor = (answer: "orange" | "blue" | "purple") => {
     const trial = colorTrials[colorIndex];
     const isCorrect = answer === trial.answer;
     if (isCorrect) setColorCorrect((value) => value + 1);
@@ -783,7 +698,7 @@ export function InterruptionTask({ locale, onComplete }: { locale: Locale; fastM
         </> : <>
           <div className="flex items-center justify-between text-xs text-muted-foreground"><span>{t.trial} {Math.min(colorIndex + 1, colorTrials.length)} / {colorTrials.length}</span><span>{colorCorrect} / {colorIndex}</span></div>
           <Progress value={(colorIndex / colorTrials.length) * 100} className="mt-3 h-1.5" />
-          {!colorComplete ? <><div className="my-14"><p className={`text-7xl font-bold ${colorCss[colorTrials[colorIndex].color]}`}>{locale === "zh-CN" ? colorTrials[colorIndex].word : colorWordEn[colorTrials[colorIndex].word]}</p></div><div className="grid grid-cols-3 gap-3">{(["red", "blue", "green"] as const).map((color) => <Button key={color} variant="outline" className="h-14 text-base" onClick={() => answerColor(color)}>{locale === "zh-CN" ? { red: "红色", blue: "蓝色", green: "绿色" }[color] : color[0].toUpperCase() + color.slice(1)}</Button>)}</div></> : <div className="py-8"><ScoreResult score={colorCorrect} total={colorTrials.length} locale={locale} />{colorCorrect === colorTrials.length && letterPassed ? <Button className="mt-6 w-full" onClick={() => { eventLog("interruption_completed", { letterScore: correct, colorScore: colorCorrect, perfect: true }, { stage: "interruption" }); onComplete(); }}>{t.finish}<ArrowRight /></Button> : <Button className="mt-6 w-full" variant="outline" onClick={restartColor}>{t.retry}</Button>}</div>}
+          {!colorComplete ? <><div className="my-14"><p className={`text-7xl font-bold ${colorCss[colorTrials[colorIndex].color]}`}>{locale === "zh-CN" ? colorTrials[colorIndex].word : colorWordEn[colorTrials[colorIndex].word]}</p></div><div className="grid grid-cols-3 gap-3">{(["orange", "blue", "purple"] as const).map((color) => <Button key={color} variant="outline" className="h-14 text-base" onClick={() => answerColor(color)}>{locale === "zh-CN" ? { orange: "橙色", blue: "蓝色", purple: "紫色" }[color] : color[0].toUpperCase() + color.slice(1)}</Button>)}</div></> : <div className="py-8"><ScoreResult score={colorCorrect} total={colorTrials.length} locale={locale} />{colorCorrect === colorTrials.length && letterPassed ? <Button className="mt-6 w-full" onClick={() => { eventLog("interruption_completed", { letterScore: correct, colorScore: colorCorrect, perfect: true }, { stage: "interruption" }); onComplete(); }}>{t.finish}<ArrowRight /></Button> : <Button className="mt-6 w-full" variant="outline" onClick={restartColor}>{t.retry}</Button>}</div>}
         </>}
         <p className="mt-5 text-xs text-muted-foreground">{t.fullScore}</p>
       </section>

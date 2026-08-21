@@ -712,12 +712,12 @@ function RecoveryAcceptFloat({
 function WorkspaceTour({locale,onComplete}:{locale:Locale;condition:Condition;onComplete:()=>void}) {
   const zhSteps:{target:string;title:string;body:string}[]=[
     {target:"materials",title:"先阅读实验材料",body:"这里是当前任务的证据与约束材料。点击不同材料查看全文，系统会记录阅读进度。"},
-    {target:"memo",title:"在工作区记录思考",body:"中间的工作区用于写下候选框架、假设、不确定点、排除方向和下一步。内容会持续保存；拖动两侧的竖向分隔条可调整各列宽度。"},
+    {target:"memo",title:"在工作区记录思考",body:"中间的工作区用于写下候选框架、假设、不确定点和排除方向。内容会持续保存；拖动两侧的竖向分隔条可调整各列宽度。"},
     {target:"goals",title:"检查右上角目标",body:"右上角用于逐项核对第一阶段目标。目标内容可独立上下滚动。"},
   ];
   const enSteps:{target:string;title:string;body:string}[]=[
     {target:"materials",title:"Read the evidence first",body:"These sources describe the current task evidence and constraints. Open each one to read it; reading progress is recorded."},
-    {target:"memo",title:"Record reasoning in the workspace",body:"Use the central workspace for candidate framings, hypotheses, uncertainties, rejected directions, and your next step. Its content is continuously saved; drag either vertical divider to resize the columns."},
+    {target:"memo",title:"Record reasoning in the workspace",body:"Use the central workspace for candidate framings, hypotheses, uncertainties, and rejected directions. Its content is continuously saved; drag either vertical divider to resize the columns."},
     {target:"goals",title:"Check the upper-right goals",body:"Use the upper-right window to check Phase 1 requirements. Its content scrolls independently."},
   ];
   zhSteps.push({target:"chat",title:"与 AI 比较问题框架",body:"三种恢复方式在第一阶段使用相同的 AI、材料和工作区。请要求 AI 引用材料编号，并区分证据、推断和仍需验证的假设。"});
@@ -805,13 +805,8 @@ function Workspace({
   const [remainingSeconds,setRemainingSeconds]=useState(WORKSPACE_DURATION_SECONDS);
   const countdownEndRef=useRef<number|null>(null);
   const timerExpiredLoggedRef=useRef(false);
-  const onPhaseOneCaptureRef=useRef(onPhaseOneCapture);
   const centerColumnRatio=100-leftColumnRatio-rightColumnRatio;
   const timerText=`${String(Math.floor(remainingSeconds/60)).padStart(2,"0")}:${String(remainingSeconds%60).padStart(2,"0")}`;
-
-  useEffect(()=>{
-    onPhaseOneCaptureRef.current=onPhaseOneCapture;
-  },[onPhaseOneCapture]);
 
   useEffect(()=>{
     const timeout=window.setTimeout(()=>saveRemoteStudySnapshot({memo,chat}),700);
@@ -835,10 +830,6 @@ function Workspace({
         timerExpiredLoggedRef.current=true;
         const stage=phase==="work"?"research_work":"recovery";
         eventLog("workspace_timer_expired",{taskId,phase,durationSeconds:WORKSPACE_DURATION_SECONDS},{stage});
-        const nextScreen: Screen=phase==="work"?"city_t1":"post_survey";
-        if(phase==="work")onPhaseOneCaptureRef.current?.();
-        eventLog("workspace_auto_advanced",{taskId,phase,nextScreen},{stage});
-        setScreen(nextScreen);
       }
     };
     updateTimer();
@@ -1068,7 +1059,7 @@ function PhaseOnePanel({locale,condition,taskId,memo,remaining,testMode,onPhaseO
   const totalCriteria=phaseOneGoals.reduce((total,goal)=>total+goal.criteria.length,0);
   const wordCount=(text:string)=>locale==="zh-CN"?text.replace(/\s/g,"").length:(text.trim()?text.trim().split(/\s+/).length:0);
   const memoCount=Math.max(0,wordCount(memo)-wordCount(task.starterMemo[locale]));
-  const checkpointReady=testMode||remaining<=180;
+  const checkpointReady=testMode||remaining<=0;
   return <section data-tour="goals" className="flex min-h-0 flex-col bg-[#fbfcfe]">
     <div className="flex h-14 shrink-0 items-center justify-between border-b px-5"><h2 className="flex items-center gap-2 font-semibold"><Target size={20} className="text-primary"/>{locale==="zh-CN"?"第一阶段目标":"Phase 1 goals"}</h2><Badge variant="outline" className="bg-white text-[10px]">{completedGoalCount} / {phaseOneGoals.length} {locale==="zh-CN"?"个目标":"goals"}</Badge></div>
     <div className="panel-scroll min-h-0 flex-1 overflow-y-auto px-5 py-4">
@@ -1081,7 +1072,7 @@ function PhaseOnePanel({locale,condition,taskId,memo,remaining,testMode,onPhaseO
         })}</div>
       </section>)}</div>
     </div>
-    <div className="shrink-0 border-t bg-white px-5 py-3"><div className="mb-2 flex justify-between text-[10px] text-muted-foreground"><span>{checkpointReady?(locale==="zh-CN"?"保存窗口已开放":"Save window open"):(locale==="zh-CN"?"最后 3 分钟开放下一步":"Next step opens in the final 3 minutes")}</span><span>{memoCount} {locale==="zh-CN"?"字":"words"} · {completed.size}/{totalCriteria} {locale==="zh-CN"?"评价点":"criteria"}</span></div><TimedButton seconds={10} ready={checkpointReady} locale={locale} label={locale==="zh-CN"?"保存推理位置并完成中断前测评":"Save reasoning state and complete the pre-interruption assessment"} blockedLabel={locale==="zh-CN"?"下一步尚未开放":"Next step is not open yet"} className="h-11 w-full text-sm" onClick={()=>{const nextScreen:Screen="city_t1";onPhaseOneCapture?.();eventLog("phase_one_checkpoint_requested",{taskId,condition,completedGoals:completedGoalCount,completedCriteria:completed.size,totalCriteria,memoCount,remaining,nextScreen},{stage:"research_work"});setScreen(nextScreen)}} /></div>
+    <div className="shrink-0 border-t bg-white px-5 py-3"><div className="mb-2 flex justify-between text-[10px] text-muted-foreground"><span>{checkpointReady?(locale==="zh-CN"?"保存窗口已开放":"Save window open"):(locale==="zh-CN"?"请先完整思考 10 分钟，之后开放下一步":"Next step opens after the full 10-minute thinking period")}</span><span>{memoCount} {locale==="zh-CN"?"字":"words"} · {completed.size}/{totalCriteria} {locale==="zh-CN"?"评价点":"criteria"}</span></div><TimedButton seconds={10} ready={checkpointReady} locale={locale} label={locale==="zh-CN"?"保存推理位置并完成中断前测评":"Save reasoning state and complete the pre-interruption assessment"} blockedLabel={locale==="zh-CN"?"下一步尚未开放":"Next step is not open yet"} className="h-11 w-full text-sm" onClick={()=>{const nextScreen:Screen="city_t1";onPhaseOneCapture?.();eventLog("phase_one_checkpoint_requested",{taskId,condition,completedGoals:completedGoalCount,completedCriteria:completed.size,totalCriteria,memoCount,remaining,nextScreen},{stage:"research_work"});setScreen(nextScreen)}} /></div>
   </section>;
 }
 
@@ -1171,7 +1162,7 @@ function computeFlowPositions(cards: ReasoningCard[]): Record<string, { x: numbe
 function KnowledgeNetwork({locale,cards,relations,selected,setSelected,compact=false}:{locale:Locale;cards:ReasoningCard[];relations:CardRelation[];selected:string;setSelected:(s:string)=>void;compact?:boolean}) { const positions=useMemo(()=>computeFlowPositions(cards),[cards]); const nodes=useMemo<Node<FlowData>[]>(()=>cards.map(c=>({id:c.id,type:"reason",position:positions[c.id]||{x:0,y:0},data:{label:c.content[locale],status:c.status,selected:c.id===selected}})),[cards,locale,positions,selected]); const edges=useMemo<Edge[]>(()=>relations.map(r=>({id:r.id,source:r.sourceCardId,target:r.targetCardId,label:compact?undefined:r.relationType,animated:r.relationType==="leads_to",style:{stroke:r.relationType==="challenges"?"#c58a2c":"#8a93a5"},labelStyle:{fontSize:9,fill:"#6b7280"}})),[compact,relations]); return <div className="h-full min-h-0 bg-[#fcfcfd]"><ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} fitView minZoom={.45} maxZoom={1.4} onNodeClick={(_,n)=>{setSelected(n.id);eventLog("network_node_clicked",{id:n.id})}}><Background gap={22} size={1} color="#e8eaf0"/>{!compact&&<Controls position="bottom-right" showInteractive={false}/>}</ReactFlow></div> }
 
 function PrimaryContinue({locale,remaining,testMode,setScreen,t}:{locale:Locale;remaining:number;testMode:boolean;setScreen:(s:Screen)=>void;t:typeof copy[Locale]}) {
-  if(!testMode)return <div className="shrink-0 border-t bg-white px-5 py-3"><Button disabled className="h-11 w-full text-sm">{locale==="zh-CN"?`固定恢复阶段进行中 · 剩余 ${Math.ceil(remaining/60)} 分钟`:`Fixed recovery period · ${Math.ceil(remaining/60)} min remaining`}</Button></div>;
+  if(!testMode)return <div className="shrink-0 border-t bg-white px-5 py-3"><TimedButton seconds={10} ready={remaining<=0} locale={locale} label={locale==="zh-CN"?"完成恢复阶段并继续":"Finish the recovery period and continue"} blockedLabel={locale==="zh-CN"?`固定恢复阶段进行中 · 剩余 ${Math.ceil(remaining/60)} 分钟`:`Fixed recovery period · ${Math.ceil(remaining/60)} min remaining`} className="h-11 w-full text-sm" onClick={()=>{eventLog("recovery_period_completed",{remaining},{stage:"recovery"});setScreen("post_survey")}} /></div>;
   return <div className="shrink-0 border-t bg-white px-5 py-3"><TimedButton seconds={5} locale={locale} label={t.endStudy} className="h-11 w-full text-sm" onClick={()=>{eventLog("end_study_clicked",{testMode:true,remaining},{stage:"recovery"});setScreen("post_survey")}} /></div>;
 }
 

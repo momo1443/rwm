@@ -159,8 +159,8 @@ const tasks: Record<ResearchTaskId, ResearchTask> = {
     overview: { "zh-CN": "你将阅读 5 份相互冲突的材料。中断后会出现一份可能改变当前选择的新证据。", en: "You will read five conflicting sources. After the interruption, new evidence may change your choice." },
     familiarity: { "zh-CN": "城市公共政策与多标准决策", en: "urban public policy and multi-criteria decision making" },
     starterMemo: {
-      "zh-CN": "决策问题：和安市应选择哪一种治理方案？\n\n评价标准及权重：\n\n方案 A：社区增员督导\n\n方案 B：智能投放与按量激励\n\n方案 C：集中式机械分选\n\n当前首选及理由：\n\n已排除方案及理由：\n\n最大不确定性：\n\n下一步验证：",
-      en: "Decision: Which option should He'an choose?\n\nCriteria and weights:\n\nOption A: community staffing\n\nOption B: smart collection and incentives\n\nOption C: centralized mechanical sorting\n\nCurrent preference and rationale:\n\nRejected option and rationale:\n\nLargest uncertainty:\n\nNext verification:",
+      "zh-CN": "决策问题：和安市应选择哪一种治理方案？\n\n评价标准及权重：\n\n方案 A：社区增员督导\n\n方案 B：智能投放与按量激励\n\n方案 C：集中式机械分选\n\n当前首选及理由：\n\n已排除方案及理由：\n\n当前不确定点：",
+      en: "Decision: Which option should He'an choose?\n\nCriteria and weights:\n\nOption A: community staffing\n\nOption B: smart collection and incentives\n\nOption C: centralized mechanical sorting\n\nCurrent preference and rationale:\n\nRejected option and rationale:\n\nCurrent uncertainty:",
     },
     assistantIntro: { "zh-CN": "我会帮助你比较 A、B、C 三个方案，但不会替你做最终选择。请先告诉我你最看重哪些标准，以及为什么。", en: "I will help compare options A, B, and C without making the final choice for you. Start with the criteria you consider most important and why." },
     phaseOneGoals: commonGoals("decision"),
@@ -183,8 +183,8 @@ const tasks: Record<ResearchTaskId, ResearchTask> = {
     overview: { "zh-CN": "你将阅读 6 份立场和方法各异的材料。中断后会增加一份可能反驳当前论点的新研究。", en: "You will read six sources with differing positions and methods. A potentially disconfirming study appears after interruption." },
     familiarity: { "zh-CN": "生成式 AI 在大学教学与考核中的使用", en: "the use of generative AI in university teaching and assessment" },
     starterMemo: {
-      "zh-CN": "论证问题：大学是否应该限制生成式 AI？\n\n暂定论点：\n\n支持证据：\n\n冲突或反对证据：\n\n适用范围与例外：\n\n已排除的解释及理由：\n\n未解决问题：\n\n下一步核查：",
-      en: "Argument question: Should universities restrict generative AI?\n\nTentative thesis:\n\nSupporting evidence:\n\nConflicting evidence:\n\nScope and exceptions:\n\nRejected interpretation and rationale:\n\nUnresolved question:\n\nNext check:",
+      "zh-CN": "论证问题：大学是否应该限制生成式 AI？\n\n暂定论点：\n\n支持证据：\n\n冲突证据：\n\n适用范围：\n\n已排除解释：\n\n当前不确定点：",
+      en: "Argument question: Should universities restrict generative AI?\n\nTentative thesis:\n\nSupporting evidence:\n\nConflicting evidence:\n\nScope:\n\nRejected interpretation:\n\nCurrent uncertainty:",
     },
     assistantIntro: { "zh-CN": "我会帮助你综合相互冲突的证据，但不会替你写最终论证。你可以先提出一个暂定立场，并说明它适用于哪些课程或考核。", en: "I will help synthesize conflicting evidence without writing the final argument. Start with a tentative position and the courses or assessments to which it applies." },
     phaseOneGoals: commonGoals("argument"),
@@ -208,8 +208,8 @@ const tasks: Record<ResearchTaskId, ResearchTask> = {
     overview: { "zh-CN": "你将阅读 6 份需求与约束材料。中断后，项目预算将发生变化。", en: "You will read six demand and constraint sources. The project budget changes after interruption." },
     familiarity: { "zh-CN": "校园交通服务或公共服务规划", en: "campus transportation or public-service planning" },
     starterMemo: {
-      "zh-CN": "设计目标：\n\n优先用户：\n\n关键约束：\n\n候选架构：\n\n当前方案（线路、时段、车辆、人员）：\n\n已排除设计及理由：\n\n未解决问题：\n\n下一步修改或验证：",
-      en: "Design goal:\n\nPriority users:\n\nKey constraints:\n\nCandidate architectures:\n\nCurrent design (routes, hours, vehicles, staffing):\n\nRejected design and rationale:\n\nUnresolved issue:\n\nNext revision or test:",
+      "zh-CN": "设计目标：\n\n优先用户：\n\n关键约束：\n\n候选架构：\n\n当前方案（线路、时段、车辆、人员）：\n\n已排除设计及理由：\n\n当前不确定点：",
+      en: "Design goal:\n\nPriority users:\n\nKey constraints:\n\nCandidate architectures:\n\nCurrent design (routes, hours, vehicles, staffing):\n\nRejected design and rationale:\n\nCurrent uncertainty:",
     },
     assistantIntro: { "zh-CN": "我会帮助你在约束下比较设计方案，但不会替你完成最终方案。请先界定最优先的用户和不可违反的约束。", en: "I will help compare designs under constraints without completing the final plan. Start by defining the priority users and non-negotiable constraints." },
     phaseOneGoals: commonGoals("design"),
