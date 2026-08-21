@@ -805,8 +805,13 @@ function Workspace({
   const [remainingSeconds,setRemainingSeconds]=useState(WORKSPACE_DURATION_SECONDS);
   const countdownEndRef=useRef<number|null>(null);
   const timerExpiredLoggedRef=useRef(false);
+  const onPhaseOneCaptureRef=useRef(onPhaseOneCapture);
   const centerColumnRatio=100-leftColumnRatio-rightColumnRatio;
   const timerText=`${String(Math.floor(remainingSeconds/60)).padStart(2,"0")}:${String(remainingSeconds%60).padStart(2,"0")}`;
+
+  useEffect(()=>{
+    onPhaseOneCaptureRef.current=onPhaseOneCapture;
+  },[onPhaseOneCapture]);
 
   useEffect(()=>{
     const timeout=window.setTimeout(()=>saveRemoteStudySnapshot({memo,chat}),700);
@@ -830,6 +835,11 @@ function Workspace({
         timerExpiredLoggedRef.current=true;
         const stage=phase==="work"?"research_work":"recovery";
         eventLog("workspace_timer_expired",{taskId,phase,durationSeconds:WORKSPACE_DURATION_SECONDS},{stage});
+        if(phase==="work"){
+          onPhaseOneCaptureRef.current?.();
+          eventLog("workspace_auto_advanced",{taskId,phase,nextScreen:"city_t1"},{stage});
+          setScreen("city_t1");
+        }
       }
     };
     updateTimer();
