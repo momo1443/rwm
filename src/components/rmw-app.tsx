@@ -622,7 +622,7 @@ function RecoveryAcceptFloat({
   </div>;
 }
 
-function WorkspaceTour({locale,onComplete}:{locale:Locale;condition:Condition;onComplete:()=>void}) {
+function WorkspaceTour({locale,condition,onComplete}:{locale:Locale;condition:Condition;onComplete:()=>void}) {
   const zhSteps:{target:string;title:string;body:string}[]=[
     {target:"materials",title:"先阅读实验材料",body:"这里是当前任务的证据与约束材料。点击不同材料查看全文，系统会记录阅读进度。"},
     {target:"memo",title:"在工作区记录思考",body:"中间的工作区用于写下候选框架、假设、不确定点和排除方向。内容会持续保存；拖动两侧的竖向分隔条可调整各列宽度。"},
@@ -633,8 +633,13 @@ function WorkspaceTour({locale,onComplete}:{locale:Locale;condition:Condition;on
     {target:"memo",title:"Record reasoning in the workspace",body:"Use the central workspace for candidate framings, hypotheses, uncertainties, and rejected directions. Its content is continuously saved; drag either vertical divider to resize the columns."},
     {target:"goals",title:"Check the upper-right goals",body:"Use the upper-right window to check Phase 1 requirements. Its content scrolls independently."},
   ];
-  zhSteps.push({target:"chat",title:"与 AI 比较问题框架",body:"三种恢复方式在第一阶段使用相同的 AI、材料和工作区。请要求 AI 引用材料编号，并区分证据、推断和仍需验证的假设。"});
-  enSteps.push({target:"chat",title:"Compare framings with AI",body:"Every condition uses the same AI, materials, and workspace in Phase 1. Ask the AI to cite source IDs and distinguish evidence, inference, and unverified assumptions."});
+  if(condition==="rmw_no_summary"){
+    zhSteps.push({target:"chat",title:"本条件不提供 AI 助手",body:"你被分配到用户自主笔记条件：全程不能使用 AI 对话，请完全依靠自己在工作区中的记录来推进和恢复思路。"});
+    enSteps.push({target:"chat",title:"No AI assistant in this condition",body:"You were assigned to the Self-Notes condition: no AI chat is available at any point. Rely entirely on your own notes in the workspace to reason and to resume later."});
+  }else{
+    zhSteps.push({target:"chat",title:"与 AI 比较问题框架",body:"三种恢复方式在第一阶段使用相同的 AI、材料和工作区。请要求 AI 引用材料编号，并区分证据、推断和仍需验证的假设。"});
+    enSteps.push({target:"chat",title:"Compare framings with AI",body:"Every condition uses the same AI, materials, and workspace in Phase 1. Ask the AI to cite source IDs and distinguish evidence, inference, and unverified assumptions."});
+  }
   const steps=locale==="zh-CN"?zhSteps:enSteps;
   const [index,setIndex]=useState(0);
   const [rect,setRect]=useState<DOMRect|null>(null);
@@ -702,6 +707,7 @@ function Workspace({
   t: typeof copy[Locale];
 }) {
   const task=getResearchTask(taskId);
+  const chatDisabled=condition==="rmw_no_summary";
   const phaseDurationSeconds=phase==="work"?WORK_PHASE_DURATION_SECONDS:RECOVERY_PHASE_DURATION_SECONDS;
   const [cards,setCards]=useState<ReasoningCard[]>(()=>phase==="recovery"&&problemState?toReasoningCards(problemState,locale):[]);
   const recoveryRelations=useMemo<CardRelation[]>(()=>problemState?toCardRelations(problemState):[],[problemState]);
@@ -808,7 +814,7 @@ function Workspace({
   };
   const send=async()=>{
     const userText=message.trim();
-    if(!userText||isLoading)return;
+    if(!userText||isLoading||chatDisabled)return;
     const history:ChatMessage[]=[...chat,{role:"user",text:userText}];
     setChat(history);
     setMessage("");
@@ -897,7 +903,7 @@ function Workspace({
         >
           <span className="h-1 w-12 rounded-full bg-border transition group-hover:bg-primary/45"/>
         </button>
-        <ChatPanel locale={locale} chat={chat} message={message} setMessage={setMessage} send={send} isLoading={isLoading} error={chatError} t={t}/>
+        <ChatPanel locale={locale} chat={chat} message={message} setMessage={setMessage} send={send} isLoading={isLoading} error={chatError} disabled={chatDisabled} t={t}/>
       </section>
     </div>
     {showTour&&<WorkspaceTour locale={locale} condition={condition} onComplete={()=>setShowTour(false)}/>}
@@ -945,7 +951,15 @@ function MaterialsPanel({locale,taskId,phase,t}:{locale:Locale;taskId:ResearchTa
   </aside>;
 }
 
-function ChatPanel({locale,chat,message,setMessage,send,isLoading,error,t}:{locale:Locale;chat:ChatMessage[];message:string;setMessage:(s:string)=>void;send:()=>void;isLoading:boolean;error:string|null;t:typeof copy[Locale]}) {
+function ChatPanel({locale,chat,message,setMessage,send,isLoading,error,disabled,t}:{locale:Locale;chat:ChatMessage[];message:string;setMessage:(s:string)=>void;send:()=>void;isLoading:boolean;error:string|null;disabled?:boolean;t:typeof copy[Locale]}) {
+  if(disabled){
+    return <section data-tour="chat" className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-white">
+      <div className="flex h-14 shrink-0 items-center justify-between border-b px-5"><h2 className="flex items-center gap-2 font-semibold"><Sparkle size={19} className="text-muted-foreground" weight="fill"/>{t.chat}</h2><Badge variant="outline" className="text-[10px]">{locale==="zh-CN"?"本条件不可用":"Unavailable"}</Badge></div>
+      <div className="flex min-h-0 flex-1 items-center justify-center px-8 text-center">
+        <p className="text-sm leading-6 text-muted-foreground">{locale==="zh-CN"?"你被分配到用户自主笔记条件：本条件全程不提供 AI 对话，请依靠自己在工作区中的记录来推进和恢复思路。":"You are in the Self-Notes condition: no AI chat is available at any point. Rely on your own notes in the workspace to reason and to resume later."}</p>
+      </div>
+    </section>;
+  }
   return <section data-tour="chat" className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-white">
     <div className="flex h-14 shrink-0 items-center justify-between border-b px-5"><h2 className="flex items-center gap-2 font-semibold"><Sparkle size={19} className="text-primary" weight="fill"/>{t.chat}</h2><Badge variant="outline" className="text-[10px]">DeepSeek</Badge></div>
     <div className="panel-scroll min-h-0 flex-1 overflow-y-auto px-5 py-5">
