@@ -9,20 +9,6 @@ import { researchTaskIds } from "@/lib/research-task";
 const participantCodeSchema = z.string().regex(/^RMW-[A-F0-9]{8}$/);
 const sessionIdSchema = z.string().uuid();
 const boundedJson = z.unknown().refine((value) => JSON.stringify(value).length <= 200000, "Structured result is too large");
-const uniqueRanking = <T extends [string, ...string[]]>(values: T) => z.array(z.enum(values)).length(values.length).refine((ranking) => new Set(ranking).size === values.length, "Ranking must contain each item exactly once");
-const cityPolicyProbeSchema = z.object({
-  optionRanking: uniqueRanking(["A", "B", "C"]),
-  criterionRanking: uniqueRanking(["cost", "equity", "implementation", "environment", "acceptance"]),
-  topChoiceReason: z.string().trim().min(10).max(2000),
-  decisionChangingUncertainty: z.string().trim().min(5).max(2000),
-  confidence: z.number().int().min(1).max(5),
-  submittedAt: z.string().datetime(),
-}).strict();
-const legacyCityPolicyAssessmentSchema = z.object({
-  version: z.literal("city-policy-recovery-v1"),
-  taskId: z.literal("city_policy"),
-  probes: z.object({ t1: cityPolicyProbeSchema.optional(), t2: cityPolicyProbeSchema.optional(), t3: cityPolicyProbeSchema.optional() }).strict(),
-}).strict();
 const reasoningAnswersSchema = z.object({
   goal: z.string().trim().min(2).max(4000),
   position: z.string().trim().min(2).max(4000),
@@ -33,14 +19,11 @@ const reasoningAnswersSchema = z.object({
 }).strict();
 const recoveryProbeSchema = z.object({
   reasoning: reasoningAnswersSchema,
-  content: z.array(z.string().trim().min(1).max(2000)).max(6),
-  form: z.enum(["A", "B"]),
   submittedAt: z.string().datetime(),
 }).strict();
 const recoveryAssessmentSchema = z.object({
   version: z.literal("reasoning-recovery-v2"),
   taskId: z.enum(researchTaskIds),
-  formOrder: z.enum(["AB", "BA"]),
   probes: z.object({ t1: recoveryProbeSchema.optional(), t2: recoveryProbeSchema.optional(), t3: recoveryProbeSchema.optional() }).strict(),
   participantNotes: z.string().trim().min(30).max(10000).optional(),
   readiness: z.object({
@@ -57,7 +40,6 @@ const recoveryAssessmentSchema = z.object({
     supportSufficiency: z.number().int().min(1).max(7),
   }).strict().optional(),
 }).strict();
-const taskAssessmentSchema = z.union([legacyCityPolicyAssessmentSchema, recoveryAssessmentSchema]);
 const snapshotSchema = z.object({
   preSurvey: z.record(z.string(), z.number().int().min(1).max(5)).optional(),
   phaseOneMemo: z.string().max(20000).optional(),
@@ -68,7 +50,7 @@ const snapshotSchema = z.object({
   problemState: boundedJson.optional(),
   recall: z.record(z.string(), z.string().max(8000)).optional(),
   recoveryState: boundedJson.optional(),
-  taskAssessment: taskAssessmentSchema.optional(),
+  taskAssessment: recoveryAssessmentSchema.optional(),
 }).strict();
 const eventSchema = z.object({
   id: z.string().uuid(),

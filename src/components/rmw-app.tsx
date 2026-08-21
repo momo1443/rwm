@@ -46,7 +46,7 @@ import {
   type RecoveryReadiness,
 } from "@/lib/recovery-assessment";
 
-type Screen = "landing" | "brief" | "survey" | "work" | "city_t1" | "checkpoint" | "interruption" | "recall" | "city_t2" | "city_support" | "city_t3" | "workspace" | "post_survey" | "complete";
+type Screen = "landing" | "brief" | "survey" | "work" | "city_t1" | "checkpoint" | "interruption" | "city_t2" | "city_support" | "city_t3" | "workspace" | "post_survey" | "complete";
 type ChatMessage = { role: "user" | "assistant"; text: string };
 const WORK_PHASE_DURATION_SECONDS = 900;
 const RECOVERY_PHASE_DURATION_SECONDS = 600;
@@ -67,8 +67,7 @@ const copy = {
     uncertainHint: "还没有做 / 尚未核实的事情",
     continue: "继续研究", endStudy: "结束研究", evidence: "查看证据", pin: "置顶", verify: "已核查", expire: "过期", restore: "恢复",
     allCards: "全部卡片", ready: "从这里继续", readFirst: "先花一分钟看恢复摘要，再检查存疑内容。",
-    recallTitle: "无辅助回忆批注", recallSub: "请仅凭记忆填写。提交后才会显示恢复支持材料。",
-    submitRecall: "提交并查看恢复支持", completed: "任务已完成", completeText: "感谢参与。你的回答已安全保存。",
+    completed: "任务已完成", completeText: "感谢参与。你的回答已安全保存。",
     recoveryAcceptTitle: "恢复阶段 · 接受推理位置",
     recoveryAcceptSub: "请先确认恢复支持给出的关键点。可编辑后接受，再进入卡片与网络校准。",
     recoveryAcceptAction: "接受并继续",
@@ -90,8 +89,7 @@ const copy = {
     uncertainHint: "What you have not yet done or verified",
     continue: "Continue research", endStudy: "End study", evidence: "View evidence", pin: "Pin", verify: "Verified", expire: "Expire", restore: "Restore",
     allCards: "All cards", ready: "Resume from here", readFirst: "Review the brief first, then inspect the uncertain claim.",
-    recallTitle: "Unsupported recall notes", recallSub: "Answer from memory only. Recovery support appears after you submit.",
-    submitRecall: "Submit and reveal support", completed: "Study complete", completeText: "Thank you. Your responses have been saved securely.",
+    completed: "Study complete", completeText: "Thank you. Your responses have been saved securely.",
     recoveryAcceptTitle: "Recovery · Accept reasoning position",
     recoveryAcceptSub: "Confirm the recovery-critical points first. Edit if needed, accept, then calibrate cards and the network.",
     recoveryAcceptAction: "Accept and continue",
@@ -111,7 +109,7 @@ export function RmwApp() {
   const [participantId, setParticipantId] = useState("");
   const [startError, setStartError] = useState("");
   const [problemState, setProblemState] = useState<ProblemStateSnapshot | null>(() => readProblemStateSnapshot());
-  const [recoveryAssessment, setRecoveryAssessment] = useState<RecoveryAssessment>(() => createRecoveryAssessment("city_policy", "00000000-0000-4000-8000-000000000000"));
+  const [recoveryAssessment, setRecoveryAssessment] = useState<RecoveryAssessment>(() => createRecoveryAssessment("city_policy"));
   const [completionStatus, setCompletionStatus] = useState<"saving" | "saved" | "error">("saving");
   const t = copy[locale];
 
@@ -181,7 +179,7 @@ export function RmwApp() {
           setMemo(task.starterMemo[locale]);
           setChat([{ role: "assistant", text: task.assistantIntro[locale] }]);
           setProblemState(null);
-          setRecoveryAssessment(createRecoveryAssessment(assignedTaskId, sessionId));
+          setRecoveryAssessment(createRecoveryAssessment(assignedTaskId));
           saveProblemStateSnapshot(null);
           eventLog("research_task_started", { taskId: assignedTaskId, assignment: testMode ? "manual_test" : "server_balanced_random", participantId, condition: assignedCondition }, { stage: "task_setup" });
           setScreen("brief");
@@ -193,7 +191,7 @@ export function RmwApp() {
           saveRemoteStudySnapshot({ phaseOneMemo: memo, phaseOneChat: chat, phaseOneCapturedAt: capturedAt });
           eventLog("phase_one_snapshot_captured", { taskId, memoLength: memo.length, chatTurnCount: chat.length, capturedAt }, { stage: "research_work", targetType: "memo" });
         }} t={t} />}
-        {screen === "city_t1" && <RecoveryProbePage locale={locale} stage="t1" assessment={recoveryAssessment} onSubmit={(probe) => {
+        {screen === "city_t1" && <RecoveryProbePage locale={locale} stage="t1" onSubmit={(probe) => {
           const next = withRecoveryProbe(recoveryAssessment, "t1", probe);
           setRecoveryAssessment(next);
           saveRemoteStudySnapshot({ taskAssessment: next });
@@ -208,8 +206,7 @@ export function RmwApp() {
           setScreen("interruption");
         }} />}
         {screen === "interruption" && <InterruptionTask locale={locale} fastMode={testMode} onComplete={() => setScreen("city_t2")} />}
-        {screen === "recall" && <Recall locale={locale} condition={condition} taskId={taskId} setScreen={setScreen} t={t} />}
-        {screen === "city_t2" && <RecoveryProbePage locale={locale} stage="t2" assessment={recoveryAssessment} onSubmit={(probe) => {
+        {screen === "city_t2" && <RecoveryProbePage locale={locale} stage="t2" onSubmit={(probe) => {
           const next = withRecoveryProbe(recoveryAssessment, "t2", probe);
           setRecoveryAssessment(next);
           saveRemoteStudySnapshot({ taskAssessment: next, recall: probe.reasoning });
@@ -223,7 +220,7 @@ export function RmwApp() {
           saveRemoteStudySnapshot({ taskAssessment: next });
           setScreen("city_t3");
         }} />}
-        {screen === "city_t3" && <RecoveryProbePage locale={locale} stage="t3" assessment={recoveryAssessment} onSubmit={(probe) => {
+        {screen === "city_t3" && <RecoveryProbePage locale={locale} stage="t3" onSubmit={(probe) => {
           const next = withRecoveryProbe(recoveryAssessment, "t3", probe);
           setRecoveryAssessment(next);
           saveRemoteStudySnapshot({ taskAssessment: next });
@@ -544,71 +541,6 @@ function Survey({ locale, taskId, setScreen, t }: { locale:Locale;taskId:Researc
 function CenteredShell({step,title,children}:{step?:string;title:string;children:React.ReactNode}) { return <div className="min-h-screen bg-[#f7f6f2]"><header className="mx-auto flex h-20 max-w-5xl items-center justify-between px-8"><Brand/>{step?<span className="font-mono text-xs text-muted-foreground">{step}</span>:null}</header><section className="mx-auto max-w-2xl px-8 py-16"><h1 className="mb-10 text-3xl font-semibold tracking-tight">{title}</h1><div className="rounded-2xl border bg-white p-8 shadow-[0_18px_60px_rgba(35,40,65,.07)]">{children}</div></section></div> }
 
 function Brand(){return <div className="flex items-center gap-3"><div className="grid size-10 place-items-center rounded-xl bg-primary text-white"><Brain size={23} weight="duotone"/></div><div><div className="font-semibold tracking-tight">RMW</div><div className="text-[10px] uppercase tracking-[.16em] text-muted-foreground">Reasoning Memory</div></div></div>}
-
-function Recall({ locale,condition,taskId,setScreen,t }: {locale:Locale;condition:Condition;taskId:ResearchTaskId;setScreen:(s:Screen)=>void;t:typeof copy[Locale]}) {
-  const fields=[
-    { label:t.currentGoal, hint:t.currentGoalHint, key:"currentGoal" },
-    { label:t.position, hint:t.positionHint, key:"position" },
-    { label:t.uncertain, hint:t.uncertainHint, key:"uncertain" },
-  ] as const;
-  const [responses,setResponses]=useState<string[]>(fields.map(()=>""));
-  const complete=responses.every(response=>response.trim());
-  return <div className="min-h-screen bg-[#f7f6f2]">
-    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 p-6 backdrop-blur-[2px]" role="dialog" aria-modal="true" aria-labelledby="recall-annotation-title">
-    <div className="w-full max-w-xl rounded-2xl border bg-white p-7 shadow-[0_28px_90px_rgba(10,18,44,.28)]">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="font-mono text-[10px] uppercase tracking-[.16em] text-muted-foreground">{locale==="zh-CN"?"无辅助回忆 · 01:30":"Unsupported recall · 01:30"}</p>
-          <h1 id="recall-annotation-title" className="mt-2 text-2xl font-semibold tracking-tight">{t.recallTitle}</h1>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">{t.recallSub}</p>
-        </div>
-        <Brand />
-      </div>
-      <div className="mt-6 space-y-4">
-        {fields.map((field,i)=>(
-          <label key={field.key} className="block">
-            <span className="mb-1 block text-sm font-medium">{i+1}. {field.label}</span>
-            <span className="mb-2 block text-xs leading-5 text-muted-foreground">{field.hint}</span>
-            <Textarea
-              rows={2}
-              placeholder="…"
-              value={responses[i]}
-              onChange={event=>setResponses(current=>current.map((value,index)=>index===i?event.target.value:value))}
-            />
-          </label>
-        ))}
-      </div>
-      <TimedButton
-        seconds={5}
-        ready={complete}
-        locale={locale}
-        label={t.submitRecall}
-        blockedLabel={locale==="zh-CN"?"请完成全部回忆题":"Answer every recall prompt"}
-        className="mt-7 h-12 w-full"
-        onClick={()=>{
-          eventLog("unsupported_recall_submitted",{
-            answeredCount:responses.filter(value=>value.trim()).length,
-            responseLengths:responses.map(value=>value.length),
-            responses:{
-              currentGoal:responses[0],
-              position:responses[1],
-              uncertain:responses[2],
-            },
-          },{stage:"unsupported_recall"});
-          saveRemoteStudySnapshot({
-            recall:{currentGoal:responses[0],position:responses[1],uncertain:responses[2]},
-          });
-          if(taskId==="city_policy")setScreen("city_t2");
-          else{
-            eventLog("recovery_support_revealed",{condition},{stage:"recovery"});
-            setScreen("workspace");
-          }
-        }}
-      />
-    </div>
-    </div>
-  </div>;
-}
 
 function RecoverySupportPage({ locale, condition, taskId, problemState, participantNotes, testMode, onContinue }: { locale: Locale; condition: Condition; taskId: ResearchTaskId; problemState: ProblemStateSnapshot | null; participantNotes: string; testMode: boolean; onContinue: (readiness: RecoveryReadiness) => void }) {
   const cards = useMemo(() => problemState ? toReasoningCards(problemState, locale) : [], [locale, problemState]);

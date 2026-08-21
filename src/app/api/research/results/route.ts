@@ -6,8 +6,7 @@ import { chatCounts, interruptionMetrics, taskMilestones } from "@/lib/admin-res
 import { ADMIN_COOKIE, getResearcherAuthConfig } from "@/lib/results-server";
 import { verifySignedToken } from "@/lib/signed-token";
 import { getResearchTask, isResearchTaskId, researchTaskMetadata } from "@/lib/research-task";
-import { cityPolicyRecoveryMetrics, type CityPolicyAssessment } from "@/lib/city-policy-assessment";
-import type { RecoveryAssessment } from "@/lib/recovery-assessment";
+import { formatReasoningRecall, type RecoveryAssessment } from "@/lib/recovery-assessment";
 
 async function isAuthorized(request: NextRequest) {
   const config = getResearcherAuthConfig();
@@ -33,7 +32,12 @@ const rubricScoresSchema = z.object({
 }).strict();
 const blindReviewSchema = z.object({
   blindId: z.string().regex(/^B-[A-F0-9]{12}$/),
-  blindReviewScores: z.object({ before: rubricScoresSchema, after: rubricScoresSchema }).strict(),
+  blindReviewScores: z.object({
+    before: rubricScoresSchema,
+    after: rubricScoresSchema,
+    recallBefore: rubricScoresSchema.optional(),
+    recallAfter: rubricScoresSchema.optional(),
+  }).strict(),
   blindReviewNote: z.string().trim().max(2000).nullable().optional(),
 });
 const deleteSchema = z.object({ sessionId: sessionIdSchema, confirmation: z.string() });
@@ -57,20 +61,29 @@ export async function GET(request: NextRequest) {
     if (request.nextUrl.searchParams.get("view") === "blind") {
       const eligible = database.results
         .filter((result) => result.status === "completed" && (result.analysis_status || "included") === "included" && result.phase_one_captured_at && result.phase_one_memo !== null && result.memo !== null)
-        .map((result) => ({
-          blind_id: blindIdFor(result.session_id),
-          locale: result.locale,
-          task_id: result.task_id,
-          task_label: researchTaskMetadata(result.task_id).label,
-          task_question: isResearchTaskId(result.task_id) ? getResearchTask(result.task_id).question[result.locale === "en" ? "en" : "zh-CN"] : "旧版垃圾分类研究任务",
-          phase_one_memo: result.phase_one_memo,
-          final_memo: result.memo,
-          blind_review_scores: result.blind_review_scores,
-          blind_review_note: result.blind_review_note,
-          blind_reviewed_at: result.blind_reviewed_at,
-        }))
+        .map((result) => {
+          const locale = result.locale === "en" ? "en" : "zh-CN";
+          const assessmentVersion = result.task_assessment && typeof result.task_assessment === "object" && "version" in result.task_assessment
+            ? String(result.task_assessment.version)
+            : null;
+          const recoveryAssessment = assessmentVersion === "reasoning-recovery-v2" ? result.task_assessment as RecoveryAssessment : null;
+          return {
+            blind_id: blindIdFor(result.session_id),
+            locale: result.locale,
+            task_id: result.task_id,
+            task_label: researchTaskMetadata(result.task_id).label,
+            task_question: isResearchTaskId(result.task_id) ? getResearchTask(result.task_id).question[locale] : "旧版垃圾分类研究任务",
+            phase_one_memo: result.phase_one_memo,
+            final_memo: result.memo,
+            t1_recall: formatReasoningRecall(recoveryAssessment?.probes.t1?.reasoning, locale) || null,
+            t3_recall: formatReasoningRecall(recoveryAssessment?.probes.t3?.reasoning, locale) || null,
+            blind_review_scores: result.blind_review_scores,
+            blind_review_note: result.blind_review_note,
+            blind_reviewed_at: result.blind_reviewed_at,
+          };
+        })
         .sort((left, right) => left.blind_id.localeCompare(right.blind_id));
-      return NextResponse.json({ mode: resultStorageMode(), rubricVersion: "recovery-outcome-v2-task-context", results: eligible });
+      return NextResponse.json({ mode: resultStorageMode(), rubricVersion: "recovery-outcome-v3-recall-pass", results: eligible });
     }
     const exportMode = request.nextUrl.searchParams.get("export");
     if (exportMode === "1" || exportMode === "analysis") {
@@ -115,9 +128,6 @@ export async function GET(request: NextRequest) {
         const taskMetadata = researchTaskMetadata(result.task_id);
         const assessmentVersion = result.task_assessment && typeof result.task_assessment === "object" && "version" in result.task_assessment
           ? String(result.task_assessment.version)
-          : null;
-        const cityMetrics = result.task_id === "city_policy" && assessmentVersion === "city-policy-recovery-v1"
-          ? cityPolicyRecoveryMetrics(result.task_assessment as CityPolicyAssessment)
           : null;
         const recoveryAssessment = assessmentVersion === "reasoning-recovery-v2" ? result.task_assessment as RecoveryAssessment : null;
         const probeCount = recoveryAssessment ? ["t1", "t2", "t3"].filter((stage) => Boolean(recoveryAssessment.probes[stage as keyof typeof recoveryAssessment.probes])).length : 0;
@@ -167,13 +177,9 @@ export async function GET(request: NextRequest) {
         assessment_version: assessmentVersion,
         recovery_probe_count: probeCount,
         recovery_probe_complete: probeCount === 3,
-        content_probe_complete: Boolean(recoveryAssessment?.probes.t1?.content.length === 6 && recoveryAssessment?.probes.t2?.content.length === 6),
         recovery_readiness_seconds: recoveryAssessment?.readiness ? recoveryAssessment.readiness.latencyMs / 1000 : null,
         participant_notes_present: Boolean(recoveryAssessment?.participantNotes),
         post_survey_complete: Boolean(recoveryAssessment?.postSurvey && Object.values(recoveryAssessment.postSurvey).length === 5),
-        city_policy_t2_accuracy: cityMetrics?.t2StateAccuracy ?? null,
-        city_policy_t3_accuracy: cityMetrics?.t3StateAccuracy ?? null,
-        city_policy_recovery_gain: cityMetrics?.recoveryGain ?? null,
       };})
       .sort((left, right) => right.created_at.localeCompare(left.created_at));
     return NextResponse.json({ mode: resultStorageMode(), results });

@@ -8,7 +8,15 @@ export const blindReviewRubric = [
 
 export type BlindReviewKey = typeof blindReviewRubric[number]["key"];
 export type BlindReviewScores = Record<BlindReviewKey, number>;
-export type BlindReviewScoreSet = { before: BlindReviewScores; after: BlindReviewScores };
+export type BlindReviewScoreSet = {
+  before: BlindReviewScores;
+  after: BlindReviewScores;
+  // Same rubric, scored against the T1 (pre-interruption) vs T3 (post-support)
+  // reasoning-recall probes instead of the memo pair. Optional: older reviews
+  // predate this second pass.
+  recallBefore?: BlindReviewScores;
+  recallAfter?: BlindReviewScores;
+};
 
 export const emptyBlindReviewScores: BlindReviewScores = {
   goal_continuity: 0,
