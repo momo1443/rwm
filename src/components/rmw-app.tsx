@@ -48,7 +48,8 @@ import {
 
 type Screen = "landing" | "brief" | "survey" | "work" | "city_t1" | "checkpoint" | "interruption" | "recall" | "city_t2" | "city_support" | "city_t3" | "workspace" | "post_survey" | "complete";
 type ChatMessage = { role: "user" | "assistant"; text: string };
-const WORKSPACE_DURATION_SECONDS = 600;
+const WORK_PHASE_DURATION_SECONDS = 900;
+const RECOVERY_PHASE_DURATION_SECONDS = 600;
 
 const copy = {
   "zh-CN": {
@@ -789,6 +790,7 @@ function Workspace({
   t: typeof copy[Locale];
 }) {
   const task=getResearchTask(taskId);
+  const phaseDurationSeconds=phase==="work"?WORK_PHASE_DURATION_SECONDS:RECOVERY_PHASE_DURATION_SECONDS;
   const [cards,setCards]=useState<ReasoningCard[]>(()=>phase==="recovery"&&problemState?toReasoningCards(problemState,locale):[]);
   const recoveryRelations=useMemo<CardRelation[]>(()=>problemState?toCardRelations(problemState):[],[problemState]);
   const [selected,setSelected]=useState("uncertain");
@@ -802,7 +804,7 @@ function Workspace({
   const workspaceGridRef=useRef<HTMLDivElement|null>(null);
   const [leftColumnRatio,setLeftColumnRatio]=useState(25);
   const [rightColumnRatio,setRightColumnRatio]=useState(30);
-  const [remainingSeconds,setRemainingSeconds]=useState(WORKSPACE_DURATION_SECONDS);
+  const [remainingSeconds,setRemainingSeconds]=useState(phaseDurationSeconds);
   const countdownEndRef=useRef<number|null>(null);
   const timerExpiredLoggedRef=useRef(false);
   const onPhaseOneCaptureRef=useRef(onPhaseOneCapture);
@@ -827,14 +829,14 @@ function Workspace({
   },[cards,phase,recoveryRelations]);
 
   useEffect(()=>{
-    if(countdownEndRef.current===null)countdownEndRef.current=Date.now()+WORKSPACE_DURATION_SECONDS*1000;
+    if(countdownEndRef.current===null)countdownEndRef.current=Date.now()+phaseDurationSeconds*1000;
     const updateTimer=()=>{
       const next=Math.max(0,Math.ceil(((countdownEndRef.current??Date.now())-Date.now())/1000));
       setRemainingSeconds(next);
       if(next===0&&!timerExpiredLoggedRef.current){
         timerExpiredLoggedRef.current=true;
         const stage=phase==="work"?"research_work":"recovery";
-        eventLog("workspace_timer_expired",{taskId,phase,durationSeconds:WORKSPACE_DURATION_SECONDS},{stage});
+        eventLog("workspace_timer_expired",{taskId,phase,durationSeconds:phaseDurationSeconds},{stage});
         if(phase==="work"){
           onPhaseOneCaptureRef.current?.();
           eventLog("workspace_auto_advanced",{taskId,phase,nextScreen:"city_t1"},{stage});
@@ -845,7 +847,7 @@ function Workspace({
     updateTimer();
     const timer=window.setInterval(updateTimer,250);
     return()=>window.clearInterval(timer);
-  },[condition,phase,setScreen,taskId]);
+  },[condition,phase,phaseDurationSeconds,setScreen,taskId]);
 
   const resizeColumns=(divider:"left"|"right",clientX:number)=>{
     const bounds=workspaceGridRef.current?.getBoundingClientRect();
@@ -1082,7 +1084,7 @@ function PhaseOnePanel({locale,condition,taskId,memo,remaining,testMode,onPhaseO
         })}</div>
       </section>)}</div>
     </div>
-    <div className="shrink-0 border-t bg-white px-5 py-3"><div className="mb-2 flex justify-between text-[10px] text-muted-foreground"><span>{checkpointReady?(locale==="zh-CN"?"保存窗口已开放":"Save window open"):(locale==="zh-CN"?"请先完整思考 10 分钟，之后开放下一步":"Next step opens after the full 10-minute thinking period")}</span><span>{memoCount} {locale==="zh-CN"?"字":"words"} · {completed.size}/{totalCriteria} {locale==="zh-CN"?"评价点":"criteria"}</span></div><TimedButton seconds={10} ready={checkpointReady} locale={locale} label={locale==="zh-CN"?"保存推理位置并完成中断前测评":"Save reasoning state and complete the pre-interruption assessment"} blockedLabel={locale==="zh-CN"?"下一步尚未开放":"Next step is not open yet"} className="h-11 w-full text-sm" onClick={()=>{const nextScreen:Screen="city_t1";onPhaseOneCapture?.();eventLog("phase_one_checkpoint_requested",{taskId,condition,completedGoals:completedGoalCount,completedCriteria:completed.size,totalCriteria,memoCount,remaining,nextScreen},{stage:"research_work"});setScreen(nextScreen)}} /></div>
+    <div className="shrink-0 border-t bg-white px-5 py-3"><div className="mb-2 flex justify-between text-[10px] text-muted-foreground"><span>{checkpointReady?(locale==="zh-CN"?"保存窗口已开放":"Save window open"):(locale==="zh-CN"?"请先完整思考 15 分钟，之后开放下一步":"Next step opens after the full 15-minute thinking period")}</span><span>{memoCount} {locale==="zh-CN"?"字":"words"} · {completed.size}/{totalCriteria} {locale==="zh-CN"?"评价点":"criteria"}</span></div><TimedButton seconds={10} ready={checkpointReady} locale={locale} label={locale==="zh-CN"?"保存推理位置并完成中断前测评":"Save reasoning state and complete the pre-interruption assessment"} blockedLabel={locale==="zh-CN"?"下一步尚未开放":"Next step is not open yet"} className="h-11 w-full text-sm" onClick={()=>{const nextScreen:Screen="city_t1";onPhaseOneCapture?.();eventLog("phase_one_checkpoint_requested",{taskId,condition,completedGoals:completedGoalCount,completedCriteria:completed.size,totalCriteria,memoCount,remaining,nextScreen},{stage:"research_work"});setScreen(nextScreen)}} /></div>
   </section>;
 }
 
