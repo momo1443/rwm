@@ -11,8 +11,8 @@ export type BlindReviewScores = Record<BlindReviewKey, number>;
 export type BlindReviewScoreSet = {
   before: BlindReviewScores;
   after: BlindReviewScores;
-  // Same rubric, scored against the T1 (pre-interruption) vs T3 (post-support)
-  // reasoning-recall probes instead of the memo pair. Optional: older reviews
+  // Same rubric, scored against the T1 (pre-interruption) vs T2 (unsupported
+  // post-interruption) reasoning probes. Optional: older reviews
   // predate this second pass.
   recallBefore?: BlindReviewScores;
   recallAfter?: BlindReviewScores;

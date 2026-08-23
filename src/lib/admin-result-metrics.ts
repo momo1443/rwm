@@ -15,6 +15,7 @@ export type InterruptionMetric = {
   bestScore: number | null;
   finalScore: number | null;
   passed: boolean;
+  meanResponseTimeMs: number | null;
 };
 
 function trialIndex(event: AdminMetricEvent) {
@@ -30,6 +31,7 @@ function summarizeTrials(events: AdminMetricEvent[], eventType: string, firstInd
   }
   const scores = attempts.map((attempt) => attempt.filter((event) => event.payload?.correct === true).length);
   const correct = trials.filter((event) => event.payload?.correct === true).length;
+  const responseTimes = trials.map((event) => event.payload?.responseTimeMs).filter((value): value is number => typeof value === "number" && value >= 0);
   return {
     responses: trials.length,
     correct,
@@ -38,14 +40,22 @@ function summarizeTrials(events: AdminMetricEvent[], eventType: string, firstInd
     bestScore: scores.length ? Math.max(...scores) : null,
     finalScore: scores.at(-1) ?? null,
     passed: events.some((event) => event.event_type === passedType),
+    meanResponseTimeMs: responseTimes.length ? responseTimes.reduce((sum, value) => sum + value, 0) / responseTimes.length : null,
   };
 }
 
 export function interruptionMetrics(events: AdminMetricEvent[]) {
+  const started = events.find((event) => event.event_type === "interruption_started");
+  const completed = events.findLast((event) => event.event_type === "interruption_completed");
+  const recordedDuration = typeof completed?.payload?.durationSeconds === "number" ? completed.payload.durationSeconds : null;
+  const timestampDuration = started && completed
+    ? Math.max(0, (new Date(completed.client_timestamp).getTime() - new Date(started.client_timestamp).getTime()) / 1000)
+    : null;
   return {
-    letter: summarizeTrials(events, "letter_game_answered", 2, "letter_game_passed"),
+    letter: summarizeTrials(events, "letter_game_answered", 2, "interruption_completed"),
     color: summarizeTrials(events, "color_game_answered", 0, "interruption_completed"),
-    completed: events.some((event) => event.event_type === "interruption_completed"),
+    completed: Boolean(completed),
+    durationSeconds: recordedDuration ?? timestampDuration,
   };
 }
 
@@ -59,19 +69,19 @@ export function taskMilestones(events: AdminMetricEvent[], status: "started" | "
     .filter(Boolean));
   const taskId = events.find((event) => typeof event.payload?.taskId === "string")?.payload?.taskId;
   const expectedMaterials = taskId === "city_policy" ? 5 : taskId === "ai_course_policy" || taskId === "night_transit" ? 6 : 5;
-  const recoveryProbe = (stage: "t1" | "t2" | "t3") => events.some((event) => event.event_type === "recovery_probe_submitted" && event.payload?.stage === stage);
+  const recoveryProbe = (stage: "t1" | "t2") => events.some((event) => event.event_type === "recovery_probe_submitted" && event.payload?.stage === stage);
   return [
     { label: "同意并建立运行", complete: has("consent_submitted"), evidence: "consent_submitted" },
     { label: "完成前测", complete: has("pre_survey_completed"), evidence: "pre_survey_completed" },
     { label: "确认任务说明", complete: has("task_brief_confirmed"), evidence: "task_brief_confirmed" },
     { label: "完成第一阶段材料最低暴露", complete: materialIds.size >= expectedMaterials, evidence: `${materialIds.size}/${expectedMaterials} materials` },
     { label: "结束第一阶段工作", complete: has("phase_one_checkpoint_requested", "workspace_auto_advanced"), evidence: "phase-one exit" },
-    { label: "提交 T1（中断前基线）", complete: recoveryProbe("t1"), evidence: "recovery_probe_submitted:t1" },
+    { label: "冻结中断前 trace", complete: has("trace_frozen"), evidence: "trace_frozen" },
+    { label: "提交 T1（6 reasoning + 6 content）", complete: recoveryProbe("t1"), evidence: "recovery_probe_submitted:t1" },
     { label: "完成中断任务", complete: has("interruption_completed"), evidence: "interruption_completed" },
-    { label: "提交 T2（无辅助回忆）", complete: recoveryProbe("t2"), evidence: "recovery_probe_submitted:t2" },
-    { label: "查看条件恢复支持", complete: has("recovery_ready"), evidence: "recovery_ready" },
-    { label: "提交 T3（支持后回忆）", complete: recoveryProbe("t3"), evidence: "recovery_probe_submitted:t3" },
-    { label: "进入恢复阶段", complete: has("recovery_support_rendered"), evidence: "recovery_support_rendered" },
+    { label: "提交 T2（6 reasoning + 6 content）", complete: recoveryProbe("t2"), evidence: "recovery_probe_submitted:t2" },
+    { label: "开放 D6", complete: has("recovery_new_evidence_unlocked"), evidence: "recovery_new_evidence_unlocked" },
+    { label: "完成 10 分钟延续任务", complete: has("continuation_completed"), evidence: "continuation_completed" },
     { label: "提交最终任务", complete: status === "completed" || has("end_study_clicked"), evidence: status },
   ];
 }

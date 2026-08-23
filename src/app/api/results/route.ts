@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { randomInt } from "node:crypto";
 import { z } from "zod";
-import { createParticipant, findSession, readAllResults, resultStorageMode, saveResultEvents, updateParticipant } from "@/lib/result-store";
+import { createParticipant, findSession, resultStorageMode, saveResultEvents, updateParticipant } from "@/lib/result-store";
 import { getParticipantSessionSecret } from "@/lib/results-server";
 import { createSignedToken, verifySignedToken } from "@/lib/signed-token";
 import { researchTaskIds } from "@/lib/research-task";
@@ -19,12 +18,51 @@ const reasoningAnswersSchema = z.object({
 }).strict();
 const recoveryProbeSchema = z.object({
   reasoning: reasoningAnswersSchema,
+  content: z.array(z.string().trim().min(1).max(2000)).length(6),
+  form: z.enum(["A", "B"]),
   submittedAt: z.string().datetime(),
 }).strict();
-const recoveryAssessmentSchema = z.object({
+const postSurveySchema = z.object({
+  mentalDemand: z.number().int().min(1).max(7),
+  temporalDemand: z.number().int().min(1).max(7),
+  effort: z.number().int().min(1).max(7),
+  frustration: z.number().int().min(1).max(7),
+  performanceSatisfaction: z.number().int().min(1).max(7),
+  judgmentUncertain: z.number().int().min(1).max(7),
+  rejectedPathBlurred: z.number().int().min(1).max(7),
+  nextActionForgotten: z.number().int().min(1).max(7),
+  distinguishCertainty: z.number().int().min(1).max(7),
+  confidentInAnswer: z.number().int().min(1).max(7),
+  reliedOnAI: z.number().int().min(1).max(7),
+  mightMissAIErrors: z.number().int().min(1).max(7),
+  memoOwnership: z.number().int().min(1).max(7),
+  overallControl: z.number().int().min(1).max(7),
+}).strict();
+const characterizationAssessmentSchema = z.object({
+  version: z.literal("reasoning-trace-gap-v1"),
+  taskId: z.literal("city_policy"),
+  formOrder: z.enum(["AB", "BA"]),
+  probes: z.object({ t1: recoveryProbeSchema.optional(), t2: recoveryProbeSchema.optional() }).strict(),
+  frozenTrace: z.object({
+    capturedAt: z.string().datetime(),
+    cutoffSequenceNumber: z.number().int().nonnegative(),
+    memoLength: z.number().int().nonnegative().max(20000),
+    chatTurnCount: z.number().int().nonnegative().max(60),
+    materialIds: z.array(z.string().min(1).max(100)).max(10),
+  }).strict().optional(),
+  postSurvey: postSurveySchema.optional(),
+}).strict();
+const legacyRecoveryProbeSchema = z.object({
+  reasoning: reasoningAnswersSchema,
+  content: z.array(z.string().trim().min(1).max(2000)).max(6).optional(),
+  form: z.enum(["A", "B"]).optional(),
+  submittedAt: z.string().datetime(),
+}).strict();
+const legacyRecoveryAssessmentSchema = z.object({
   version: z.literal("reasoning-recovery-v2"),
   taskId: z.enum(researchTaskIds),
-  probes: z.object({ t1: recoveryProbeSchema.optional(), t2: recoveryProbeSchema.optional(), t3: recoveryProbeSchema.optional() }).strict(),
+  formOrder: z.enum(["AB", "BA"]).optional(),
+  probes: z.object({ t1: legacyRecoveryProbeSchema.optional(), t2: legacyRecoveryProbeSchema.optional(), t3: legacyRecoveryProbeSchema.optional() }).strict(),
   participantNotes: z.string().trim().min(30).max(10000).optional(),
   readiness: z.object({
     supportRenderedAt: z.string().datetime(),
@@ -32,28 +70,9 @@ const recoveryAssessmentSchema = z.object({
     latencyMs: z.number().int().nonnegative().max(60 * 60 * 1000),
     viewedSections: z.array(z.string().min(1).max(100)).max(20),
   }).strict().optional(),
-  postSurvey: z.object({
-    // Adapted NASA-TLX task load
-    mentalDemand: z.number().int().min(1).max(7),
-    temporalDemand: z.number().int().min(1).max(7),
-    effort: z.number().int().min(1).max(7),
-    frustration: z.number().int().min(1).max(7),
-    performanceSatisfaction: z.number().int().min(1).max(7),
-    // Perceived reasoning-position loss (subjective corroboration of T1-T2 loss)
-    judgmentUncertain: z.number().int().min(1).max(7),
-    rejectedPathBlurred: z.number().int().min(1).max(7),
-    nextActionForgotten: z.number().int().min(1).max(7),
-    // Metacognitive confidence
-    distinguishCertainty: z.number().int().min(1).max(7),
-    confidentInAnswer: z.number().int().min(1).max(7),
-    // AI reliance
-    reliedOnAI: z.number().int().min(1).max(7),
-    mightMissAIErrors: z.number().int().min(1).max(7),
-    // Agency
-    memoOwnership: z.number().int().min(1).max(7),
-    overallControl: z.number().int().min(1).max(7),
-  }).strict().optional(),
+  postSurvey: z.record(z.string(), z.number().int().min(1).max(7)).optional(),
 }).strict();
+const recoveryAssessmentSchema = z.union([characterizationAssessmentSchema, legacyRecoveryAssessmentSchema]);
 const snapshotSchema = z.object({
   preSurvey: z.record(z.string(), z.number().int().min(1).max(5)).optional(),
   phaseOneMemo: z.string().max(20000).optional(),
@@ -109,31 +128,6 @@ async function participantFromToken(token: string, secret: string) {
   };
 }
 
-// Single-protocol study: only one task exists, so this trivially always
-// returns it. Kept (rather than hardcoded) so the balancing logic still
-// works unchanged if a second task is ever reintroduced.
-async function balancedTaskAssignment(condition: "rmw") {
-  const database = await readAllResults();
-  const activeCutoff = Date.now() - 12 * 60 * 60 * 1000;
-  const activeRows = database.results.filter((result) => {
-    if (result.analysis_status === "trashed" || result.condition !== condition) return false;
-    const isCurrentCompletedCohort = result.status === "completed"
-      && result.task_assessment
-      && typeof result.task_assessment === "object"
-      && "version" in result.task_assessment
-      && result.task_assessment.version === "reasoning-recovery-v2";
-    const isCurrentActiveRun = result.status === "started" && new Date(result.created_at).getTime() >= activeCutoff;
-    return Boolean(isCurrentCompletedCohort || isCurrentActiveRun);
-  });
-  const counts = researchTaskIds.map((taskId) => ({
-    taskId,
-    count: activeRows.filter((row) => row.task_id === taskId).length,
-  }));
-  const minimum = Math.min(...counts.map((cell) => cell.count));
-  const leastFilled = counts.filter((cell) => cell.count === minimum);
-  return leastFilled[randomInt(leastFilled.length)].taskId;
-}
-
 export async function POST(request: Request) {
   const contentLength = Number(request.headers.get("content-length") || 0);
   if (contentLength > 1_000_000) return NextResponse.json({ error: "Result payload is too large" }, { status: 413 });
@@ -161,9 +155,7 @@ export async function POST(request: Request) {
         taskId = existing.task_id as typeof taskId;
         assignmentMode = resumedSession.assignmentMode;
       } else {
-        if (assignmentMode === "manual_condition") {
-          taskId = await balancedTaskAssignment(condition);
-        }
+        if (assignmentMode === "manual_condition") taskId = "city_policy";
         await createParticipant({ sessionId, participantCode, locale, condition, taskId });
       }
       const token = await createSignedToken({
@@ -198,6 +190,23 @@ export async function POST(request: Request) {
     }
 
     const data = parsed.data.data;
+    const current = await findSession(session.sessionId);
+    if (!current) return NextResponse.json({ error: "Study session was not found" }, { status: 404 });
+    const phaseOneAlreadyFrozen = Boolean(current.phase_one_captured_at);
+    if (phaseOneAlreadyFrozen && (
+      (data.phaseOneCapturedAt !== undefined && data.phaseOneCapturedAt !== current.phase_one_captured_at)
+      || (data.phaseOneMemo !== undefined && data.phaseOneMemo !== current.phase_one_memo)
+      || (data.phaseOneChat !== undefined && JSON.stringify(data.phaseOneChat) !== JSON.stringify(current.phase_one_chat))
+    )) {
+      return NextResponse.json({ error: "The pre-interruption trace is immutable" }, { status: 409 });
+    }
+    const currentAssessment = current.task_assessment && typeof current.task_assessment === "object" && "version" in current.task_assessment
+      ? current.task_assessment as { version?: unknown; frozenTrace?: unknown }
+      : null;
+    if (currentAssessment?.version === "reasoning-trace-gap-v1" && currentAssessment.frozenTrace && data.taskAssessment?.version === "reasoning-trace-gap-v1"
+      && JSON.stringify(data.taskAssessment.frozenTrace) !== JSON.stringify(currentAssessment.frozenTrace)) {
+      return NextResponse.json({ error: "The frozen trace cutoff is immutable" }, { status: 409 });
+    }
     await updateParticipant(session.sessionId, {
       ...(data.preSurvey !== undefined && { pre_survey: data.preSurvey }),
       ...(data.phaseOneMemo !== undefined && { phase_one_memo: data.phaseOneMemo }),

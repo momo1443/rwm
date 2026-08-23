@@ -15,7 +15,7 @@ type BlindResult = {
   phase_one_memo: string;
   final_memo: string;
   t1_recall: string | null;
-  t3_recall: string | null;
+  t2_recall: string | null;
   blind_review_scores: BlindReviewScoreSet | null;
   blind_review_note: string | null;
   blind_reviewed_at: string | null;
@@ -124,13 +124,13 @@ export function BlindReviewDashboard() {
   if (access === "login") return <main className="grid min-h-screen place-items-center bg-[#f7f6f2] p-8"><form onSubmit={login} className="w-full max-w-sm rounded-2xl border bg-white p-7 shadow-sm"><LockKey size={30}/><h1 className="mt-4 text-xl font-semibold">结果盲评</h1><p className="mt-2 text-sm text-muted-foreground">使用研究者密码登录。评分界面不会显示实验条件或参与者编号。</p><label className="mt-5 block text-sm font-medium">研究者密码<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="mt-2 h-11 w-full rounded-lg border px-3" autoComplete="current-password"/></label>{error && <p role="alert" className="mt-3 text-sm text-destructive">{error}</p>}<Button type="submit" className="mt-5 w-full">登录</Button></form></main>;
 
   return <main className="min-h-screen bg-[#f7f6f2] p-5 lg:p-8">
-    <div className="mx-auto max-w-[1500px]"><header className="mb-5 flex items-end justify-between"><div><p className="text-xs uppercase tracking-widest text-muted-foreground">Recovery outcome rubric v3</p><h1 className="mt-1 text-2xl font-semibold">结果盲评</h1><p className="mt-2 text-sm text-muted-foreground">提供任务题干以判断相关性；仍不显示恢复条件、参与者编号或恢复支持内容。</p></div><p className="text-sm text-muted-foreground">已评 {results.filter((result) => result.blind_reviewed_at).length} / {results.length}</p></header>
+      <div className="mx-auto max-w-[1500px]"><header className="mb-5 flex items-end justify-between"><div><p className="text-xs uppercase tracking-widest text-muted-foreground">Reasoning Trace Gap · blind coding</p><h1 className="mt-1 text-2xl font-semibold">结果盲评</h1><p className="mt-2 text-sm text-muted-foreground">提供任务题干以判断相关性；不显示参与者编号，T1 与 T2 使用同一评分规则。</p></div><p className="text-sm text-muted-foreground">已评 {results.filter((result) => result.blind_reviewed_at).length} / {results.length}</p></header>
       {results.length === 0 ? <div className="rounded-xl border bg-white p-8 text-center text-muted-foreground">暂无同时具有中断前快照和最终 memo 的已完成记录。</div> : <div className="grid gap-5 xl:grid-cols-[210px_1fr_360px]">
         <nav aria-label="盲评记录" className="max-h-[calc(100vh-150px)] overflow-auto rounded-xl border bg-white p-2">{results.map((result) => <button key={result.blind_id} onClick={() => selectResult(result)} className={`mb-1 flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm ${activeId === result.blind_id ? "bg-secondary font-medium" : "hover:bg-muted/60"}`}><span>{result.blind_id}</span>{result.blind_reviewed_at && <CheckCircle className="text-emerald-600" weight="fill"/>}</button>)}</nav>
         <section className="space-y-4">
-          <div className="rounded-xl border border-blue-200 bg-blue-50 p-4"><p className="text-xs font-semibold text-blue-900">{active?.task_label}</p><p className="mt-2 text-sm leading-6 text-blue-950">{active?.task_question}</p><p className="mt-2 text-[11px] text-blue-800">任务对评审可见；恢复条件与具体支持材料保持隐藏。</p></div>
+          <div className="rounded-xl border border-blue-200 bg-blue-50 p-4"><p className="text-xs font-semibold text-blue-900">{active?.task_label}</p><p className="mt-2 text-sm leading-6 text-blue-950">{active?.task_question}</p><p className="mt-2 text-[11px] text-blue-800">任务对评审可见；参与者身份保持隐藏。</p></div>
           <div><p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Memo · 打断前 vs 最终</p><div className="grid gap-4 lg:grid-cols-2"><MemoCard title="中断前 memo（冻结快照）" text={active?.phase_one_memo || ""}/><MemoCard title="最终 memo（恢复阶段结束）" text={active?.final_memo || ""}/></div></div>
-          <div><p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">推理回忆 · T1（中断前基线）vs T3（支持后）</p><div className="grid gap-4 lg:grid-cols-2"><MemoCard title="T1 推理回忆（中断前）" text={active?.t1_recall || ""}/><MemoCard title="T3 推理回忆（支持后）" text={active?.t3_recall || ""}/></div></div>
+          <div><p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">推理回忆 · T1（中断前）vs T2（固定中断后无辅助）</p><div className="grid gap-4 lg:grid-cols-2"><MemoCard title="T1 推理回忆（中断前）" text={active?.t1_recall || ""}/><MemoCard title="T2 推理回忆（中断后）" text={active?.t2_recall || ""}/></div></div>
         </section>
         <aside className="space-y-5">
           <RubricPanel
@@ -144,10 +144,10 @@ export function BlindReviewDashboard() {
             setAfterScores={setAfterScores}
           />
           <RubricPanel
-            title="T1 → T3 推理恢复评分"
-            hint="同一 rubric 分别评 T1 基线与 T3 支持后回忆；主结果为 T3 分减 T1 分，直接衡量恢复支持是否帮助重建了中断前的推理状态。"
+            title="T1 → T2 推理损失评分"
+            hint="同一 rubric 分别评 T1 基线与 T2 无辅助回忆；主结果为 T1 分减 T2 分，刻画中断后的推理位置损失。"
             beforeLabel="T1"
-            afterLabel="T3"
+            afterLabel="T2"
             beforeScores={recallBeforeScores}
             afterScores={recallAfterScores}
             setBeforeScores={setRecallBeforeScores}

@@ -1,6 +1,6 @@
 # RMW — Reasoning Memory Workspace
 
-A bilingual-interface, interruption-resilient research workspace for the CHI 2027 RMW study. Participants complete one of three research tasks—multi-criteria policy choice, evidence synthesis about generative AI in university courses, or campus night-transport design—collaborate with an evidence-grounded AI tutor, draft a 600–900 Chinese-character memo, and recover their reasoning after interruption.
+A bilingual research platform for the CHI 2027 Reasoning Trace Gap characterization study. Every formal participant completes the same municipal-waste decision task and the same timed interruption protocol.
 
 ## Run locally
 
@@ -12,29 +12,21 @@ npm run dev
 Open `http://localhost:3000`. Useful review routes:
 
 - `/` — participant entry and full demo flow
-- `/?condition=rmw` — participant-facing Method 1; full RMW with recovery brief, reasoning cards, and network
-- `/?condition=rmw_no_summary` — participant-facing Method 2; RMW cards and network without the AI recovery summary
-- `/?condition=summary_only` — participant-facing Method 3; AI recovery summary only
-- `/?task=city_policy` — multi-criteria city-policy decision
-- `/?task=ai_course_policy` — evidence synthesis about generative AI in university courses
-- `/?task=night_transit` — campus night-transport planning under constraints
+- `/?task=city_policy` — the fixed multi-criteria city-policy task
 - `/?view=task` — Phase 1 and final memo requirements
 - `/?view=work` — Phase 1 workspace for the selected task
-- `/?view=checkpoint` — one-minute RMW save window with an extracted problem state and knowledge network
-- `/?view=interruption` — letter 2-back and color-recognition interruption tasks
-- `/?view=recovery` — RMW recovery workspace
-- `/?view=recovery&condition=summary_only&lang=en` — English AI-summary-only condition
-- `/?view=recall` — unsupported recall gate
+- `/?view=checkpoint` — T1 review route (the trace is frozen before this screen)
+- `/?view=interruption` — fixed-duration 2-back and color-interference block
+- `/?view=recovery` — D6 continuation workspace
+- `/?view=recall` — T2 unsupported-recall route
 - `/admin` — password-protected researcher results console
-- `/admin/blind-review` — condition-blinded pre/post memo rubric
+- `/admin/blind-review` — identity-blinded memo and T1/T2 coding
 
-The participant flow uses one fixed task and does not expose a topic chooser. The entry screen exposes condition selection for researcher testing; a formal study should assign the condition through a randomized study link rather than participant choice. Configure `.env.local` from `.env.example` to enable DeepSeek and result collection.
-
-The current build starts in the **formal timed protocol**. Phase 1 and recovery each last 10 minutes; Phase 1's save window opens in the final three minutes, and formal recovery cannot end early. Add `?test=1` only for local interface review.
+The participant flow exposes neither a task chooser nor a recovery condition. The formal protocol is fixed at 15 minutes of work, an immutable trace freeze, T1, an 8-minute interruption, T2, D6, and a 10-minute continuation. Add `?test=1` only for local interface review; test runs are excluded automatically.
 
 ## DeepSeek
 
-The server routes use DeepSeek's OpenAI-compatible Chat Completions API for evidence-grounded tutoring and pre-interruption reasoning-state extraction. Keep the key server-side:
+The server routes use DeepSeek's OpenAI-compatible Chat Completions API for the evidence-grounded tutor. Blind trace inference is an offline analysis branch from the frozen trace and is never shown to participants. Keep the key server-side:
 
 ```bash
 DEEPSEEK_API_KEY=your_key_here
@@ -44,30 +36,24 @@ DEEPSEEK_MODEL=deepseek-v4-flash
 
 Create `.env.local` in this directory, add the values above, and restart `npm run dev`. Do not prefix the key with `NEXT_PUBLIC_`, paste it into a component, or commit `.env.local`.
 
-The participant does not choose the model. The server uses `DEEPSEEK_MODEL`, falling back to `deepseek-v4-flash`. Without `DEEPSEEK_API_KEY`, the tutor reports that AI is unavailable and the checkpoint does not generate or display a Problem State. The platform never substitutes scripted replies or preset cards for a failed or unavailable model call. In Vercel, add the same values under Project Settings → Environment Variables and redeploy.
+The participant does not choose the model. The server uses `DEEPSEEK_MODEL`, falling back to `deepseek-v4-flash`. Without `DEEPSEEK_API_KEY`, the tutor reports that AI is unavailable. The platform never substitutes scripted replies for a failed model call. In Vercel, add the same values under Project Settings → Environment Variables and redeploy.
 
 ## Experimental-task controls
 
-- Participant-facing code uses three task-specific evidence packs. A task-specific new source or constraint is revealed only after the interruption.
+- Participant-facing code uses one fixed evidence pack (D1–D5); D6 is revealed only after T2.
 - The English interface does not translate the validated Chinese stimulus paragraphs; an unpiloted translation must not become another task condition.
 - The pre-task page measures AI use/evaluation, research-task self-efficacy, and prior topic familiarity with multiple 5-point items. These task-specific adaptations must be piloted and reported as adapted measures.
 
-## Implemented RMW study loop
+## Implemented study loop
 
-The demo now follows one closed-loop interruption protocol:
+1. Work with D1–D5, the AI tutor, and the memo editor for exactly 15 minutes.
+2. Freeze the memo, conversation, material-exposure set, and event cutoff before any recall prompt appears.
+3. Collect T1: six reasoning-position items plus six content items (counterbalanced Form A/B).
+4. Run a fixed 8-minute interruption: four minutes of continuous letter 2-back followed by four minutes of continuous color interference. Accuracy and response time are manipulation checks, not pass/fail gates.
+5. Collect unsupported T2 using the parallel content form and the same six reasoning dimensions. No materials, transcript, memo, summary, cards, or other recovery aid are visible.
+6. Reveal D6 and run a fixed 10-minute continuation before the post-task survey.
 
-1. On entering the save window, attempt to extract candidate problem state from participant-authored memo and chat content. The prefilled task template and assistant greeting do not count as participant reasoning.
-2. In the formal timed protocol, run Phase 1 for 10 minutes and open the save window only in its last three minutes. Test mode bypasses this gate.
-3. Present the extracted main goal, active and suspended subgoals, rejected path, concise candidate problem state, and a card-linked knowledge network. Participants can select cards and calibrate them with `Accept`, `Edit`, `Pin`, `Uncertain`, and `Expire`.
-4. In the formal timed protocol, keep the save window visible for at least one minute before the participant can continue. Test mode bypasses this gate.
-5. Run both a letter 2-back task and a color-recognition task. Each task requires a perfect score; otherwise it restarts.
-6. Collect three unsupported-recall responses before revealing recovery support.
-7. Resume with a minimal brief first, then reasoning cards, source backlinks, and the knowledge network.
-8. Continue research with editable reasoning cards while the local interaction history supports the current browser session.
-
-The three conditions share the same task, interruption, unsupported recall, and fixed recovery duration. Full `rmw` shows the recovery brief, reasoning cards, and network; `rmw_no_summary` serves as the self-notes baseline (providing no AI recovery summary, cards, or network; participants rely on their own workspace notes); `summary_only` extracts the problem state automatically in the background during the save window (without showing card rehearsal UI to participants) and shows only the AI-generated recovery summary post-interruption.
-
-For local review, append `?test=1` (or `&test=1` when a query already exists) to bypass timing gates. Without that explicit flag, the formal 10-minute Phase 1, one-minute checkpoint, and 10-minute recovery timing are enforced.
+New records use `reasoning-trace-gap-v1`. Historical `reasoning-recovery-v2` records remain exportable but must not be pooled with the new cohort. The primary RQ1 analysis scores reasoning and content at T1/T2; RQ2/RQ3 use offline human trace coding and blind LLM inference against the frozen cutoff.
 
 The DeepSeek tutor uses a conversational research-partner prompt: it responds to the participant's current intent, uses ordinary short paragraphs, structures only when useful, cites materials for consequential claims, and preserves uncertainty without forcing fixed labels or a repeated answer template. The extraction prompt separately produces the bounded reasoning-card set and relations for the knowledge network from the same trace.
 
@@ -75,7 +61,7 @@ The DeepSeek tutor uses a conversational research-partner prompt: it responds to
 
 The participant client can only write through `/api/results`; it has no result-reading endpoint. Each write after consent requires a short-lived token signed by the server. `/api/research/results` requires a separate researcher session stored in an `HttpOnly`, `SameSite=Strict` cookie, and `/admin` is marked `noindex`. Database credentials and the researcher password never enter the participant bundle.
 
-The system saves the pre-survey, an immutable pre-interruption memo/chat snapshot, final memo and AI conversation, calibrated Problem State, unsupported recall, recovery-state edits, completion status, and interaction events. Memo and AI events carry the actual `research_work` or `recovery` stage. Browser outboxes retain unsent snapshots and events and retry them after a participant session becomes available.
+The system saves the pre-survey, immutable pre-interruption memo/chat snapshot, trace cutoff metadata, counterbalanced T1/T2 responses, final memo and conversation, interruption responses and reaction times, completion status, and the synchronized event stream. Browser outboxes retain unsent snapshots and events and retry them after a participant session becomes available.
 
 For local rehearsal, set these server-side values. Results are written to `.rmw-results/results.json`; this mode is for one trusted machine only.
 

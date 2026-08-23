@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight,
   Brain,
   Check,
-  CheckCircle,
   Clock,
   PauseCircle,
   Question,
@@ -326,65 +325,94 @@ const colorTrials = [
 const colorCss = { orange: "text-orange-600", blue: "text-blue-600", purple: "text-purple-600" };
 const colorWordEn: Record<string, string> = { 蓝: "BLUE", 橙: "ORANGE", 紫: "PURPLE" };
 
-export function InterruptionTask({ locale, onComplete }: { locale: Locale; fastMode: boolean; onComplete: () => void }) {
+const INTERRUPTION_DURATION_SECONDS = 8 * 60;
+
+export function InterruptionTask({ locale, fastMode, onComplete }: { locale: Locale; fastMode: boolean; onComplete: () => void }) {
   const t = labels[locale];
-  const [game, setGame] = useState<"letter" | "color">("letter");
+  const duration = fastMode ? 12 : INTERRUPTION_DURATION_SECONDS;
+  const [remaining, setRemaining] = useState(duration);
   const [index, setIndex] = useState(2);
-  const [correct, setCorrect] = useState(0);
-  const [letterPassed, setLetterPassed] = useState(false);
+  const [letterCorrect, setLetterCorrect] = useState(0);
+  const [letterResponses, setLetterResponses] = useState(0);
   const [colorIndex, setColorIndex] = useState(0);
   const [colorCorrect, setColorCorrect] = useState(0);
-  const letterComplete = index >= letterSequence.length;
-  const colorComplete = colorIndex >= colorTrials.length;
-  const letterTotal = letterSequence.length - 2;
-  const expectedSame = !letterComplete && letterSequence[index] === letterSequence[index - 2];
+  const [colorResponses, setColorResponses] = useState(0);
+  const trialStartedAtRef = useRef(0);
+  const completedRef = useRef(false);
+  const game: "letter" | "color" = remaining > duration / 2 ? "letter" : "color";
+  const currentLetter = letterSequence[index % letterSequence.length];
+  const previousLetter = letterSequence[(index - 1) % letterSequence.length];
+  const twoBackLetter = letterSequence[(index - 2) % letterSequence.length];
+  const expectedSame = currentLetter === twoBackLetter;
 
-  const answerLetter = (same: boolean) => {
+  useEffect(() => {
+    const startedAt = Date.now();
+    eventLog("interruption_started", { durationSeconds: duration, protocolDurationSeconds: INTERRUPTION_DURATION_SECONDS, testMode: fastMode }, { stage: "interruption" });
+    const timer = window.setInterval(() => {
+      setRemaining(Math.max(0, duration - Math.floor((Date.now() - startedAt) / 1000)));
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [duration, fastMode]);
+
+  useEffect(() => {
+    trialStartedAtRef.current = performance.now();
+  }, [game, index, colorIndex]);
+
+  useEffect(() => {
+    if (remaining > 0 || completedRef.current) return;
+    completedRef.current = true;
+    eventLog("interruption_completed", {
+      durationSeconds: duration,
+      protocolDurationSeconds: INTERRUPTION_DURATION_SECONDS,
+      letterCorrect,
+      letterResponses,
+      colorCorrect,
+      colorResponses,
+      testMode: fastMode,
+    }, { stage: "interruption" });
+    onComplete();
+  }, [colorCorrect, colorResponses, duration, fastMode, letterCorrect, letterResponses, onComplete, remaining]);
+
+  const answerLetter = (same: boolean, responseAt: number) => {
     const isCorrect = same === expectedSame;
-    if (isCorrect) setCorrect((value) => value + 1);
-    eventLog("letter_game_answered", { index, same, expectedSame, correct: isCorrect }, { stage: "interruption" });
+    if (isCorrect) setLetterCorrect((value) => value + 1);
+    setLetterResponses((value) => value + 1);
+    eventLog("letter_game_answered", { index, same, expectedSame, correct: isCorrect, responseTimeMs: Math.max(0, responseAt - trialStartedAtRef.current) }, { stage: "interruption" });
     setIndex((value) => value + 1);
   };
-  const restartLetter = () => {
-    setIndex(2);
-    setCorrect(0);
-  };
-  const answerColor = (answer: "orange" | "blue" | "purple") => {
-    const trial = colorTrials[colorIndex];
+  const answerColor = (answer: "orange" | "blue" | "purple", responseAt: number) => {
+    const trial = colorTrials[colorIndex % colorTrials.length];
     const isCorrect = answer === trial.answer;
     if (isCorrect) setColorCorrect((value) => value + 1);
-    eventLog("color_game_answered", { index: colorIndex, answer, expected: trial.answer, correct: isCorrect }, { stage: "interruption" });
+    setColorResponses((value) => value + 1);
+    eventLog("color_game_answered", { index: colorIndex, answer, expected: trial.answer, correct: isCorrect, responseTimeMs: Math.max(0, responseAt - trialStartedAtRef.current) }, { stage: "interruption" });
     setColorIndex((value) => value + 1);
   };
-  const restartColor = () => {
-    setColorIndex(0);
-    setColorCorrect(0);
-  };
+  const timerText = formatClock(remaining);
+  const phaseProgress = game === "letter"
+    ? ((duration - remaining) / (duration / 2)) * 100
+    : (((duration / 2) - remaining) / (duration / 2)) * 100;
+  const colorTrial = colorTrials[colorIndex % colorTrials.length];
 
   return <div className="min-h-screen bg-[#f7f6f2] px-6 py-5">
     <div className="mx-auto max-w-5xl">
       <ExperimentTimeline locale={locale} active="break" />
-      <header className="py-9 text-center"><Badge variant="secondary" className="mb-4"><PauseCircle size={14} />{t.interruption}</Badge><h1 className="text-3xl font-semibold">{game === "letter" ? t.letterGame : t.colorGame}</h1><p className="mt-3 text-sm text-muted-foreground">{game === "letter" ? t.letterHint : t.colorHint}</p></header>
+      <header className="py-9 text-center"><Badge variant="secondary" className="mb-4"><PauseCircle size={14} />{t.interruption} · {timerText}</Badge><h1 className="text-3xl font-semibold">{game === "letter" ? t.letterGame : t.colorGame}</h1><p className="mt-3 text-sm text-muted-foreground">{game === "letter" ? t.letterHint : t.colorHint}</p></header>
       <section className="mx-auto max-w-2xl rounded-2xl border bg-white p-8 text-center shadow-[0_18px_60px_rgba(35,40,65,.07)]">
         {game === "letter" ? <>
-          <div className="flex items-center justify-between text-xs text-muted-foreground"><span>{t.trial} {Math.min(index - 1, letterTotal)} / {letterTotal}</span><span>{correct} / {Math.max(0, index - 2)}</span></div>
-          <Progress value={((index - 2) / letterTotal) * 100} className="mt-3 h-1.5" />
-          {!letterComplete ? <>
-            <div className="my-10 flex items-center justify-center gap-3">{letterSequence.slice(0, index + 1).slice(-3).map((letter, position, current) => <span key={`${letter}-${position}`} className={`grid place-items-center rounded-2xl border font-mono font-semibold ${position === current.length - 1 ? "size-32 bg-primary text-6xl text-white shadow-lg" : "size-16 bg-muted text-2xl text-muted-foreground"}`}>{letter}</span>)}</div>
-            <div className="grid grid-cols-2 gap-3"><Button variant="outline" className="h-14 text-base" onClick={() => answerLetter(false)}>{t.different}</Button><Button className="h-14 text-base" onClick={() => answerLetter(true)}>{t.same}</Button></div>
-          </> : <div className="py-8"><ScoreResult score={correct} total={letterTotal} locale={locale} />{correct === letterTotal ? <Button className="mt-6 w-full" onClick={() => { setLetterPassed(true); setGame("color"); eventLog("letter_game_passed", { score: correct }, { stage: "interruption" }); }}>{t.nextGame}<ArrowRight /></Button> : <Button className="mt-6 w-full" variant="outline" onClick={restartLetter}>{t.retry}</Button>}</div>}
+          <div className="flex items-center justify-between text-xs text-muted-foreground"><span>{locale === "zh-CN" ? "前 4 分钟：2-back" : "First 4 minutes: 2-back"}</span><span>{letterCorrect} / {letterResponses}</span></div>
+          <Progress value={Math.min(100, phaseProgress)} className="mt-3 h-1.5" />
+          <>
+            <div className="my-10 flex items-center justify-center gap-3">{[twoBackLetter, previousLetter, currentLetter].map((letter, position) => <span key={`${index}-${position}`} className={`grid place-items-center rounded-2xl border font-mono font-semibold ${position === 2 ? "size-32 bg-primary text-6xl text-white shadow-lg" : "size-16 bg-muted text-2xl text-muted-foreground"}`}>{letter}</span>)}</div>
+            <div className="grid grid-cols-2 gap-3"><Button variant="outline" className="h-14 text-base" onClick={(event) => answerLetter(false, event.timeStamp)}>{t.different}</Button><Button className="h-14 text-base" onClick={(event) => answerLetter(true, event.timeStamp)}>{t.same}</Button></div>
+          </>
         </> : <>
-          <div className="flex items-center justify-between text-xs text-muted-foreground"><span>{t.trial} {Math.min(colorIndex + 1, colorTrials.length)} / {colorTrials.length}</span><span>{colorCorrect} / {colorIndex}</span></div>
-          <Progress value={(colorIndex / colorTrials.length) * 100} className="mt-3 h-1.5" />
-          {!colorComplete ? <><div className="my-14"><p className={`text-7xl font-bold ${colorCss[colorTrials[colorIndex].color]}`}>{locale === "zh-CN" ? colorTrials[colorIndex].word : colorWordEn[colorTrials[colorIndex].word]}</p></div><div className="grid grid-cols-3 gap-3">{(["orange", "blue", "purple"] as const).map((color) => <Button key={color} variant="outline" className="h-14 text-base" onClick={() => answerColor(color)}>{locale === "zh-CN" ? { orange: "橙色", blue: "蓝色", purple: "紫色" }[color] : color[0].toUpperCase() + color.slice(1)}</Button>)}</div></> : <div className="py-8"><ScoreResult score={colorCorrect} total={colorTrials.length} locale={locale} />{colorCorrect === colorTrials.length && letterPassed ? <Button className="mt-6 w-full" onClick={() => { eventLog("interruption_completed", { letterScore: correct, colorScore: colorCorrect, perfect: true }, { stage: "interruption" }); onComplete(); }}>{t.finish}<ArrowRight /></Button> : <Button className="mt-6 w-full" variant="outline" onClick={restartColor}>{t.retry}</Button>}</div>}
+          <div className="flex items-center justify-between text-xs text-muted-foreground"><span>{locale === "zh-CN" ? "后 4 分钟：颜色干扰" : "Final 4 minutes: color interference"}</span><span>{colorCorrect} / {colorResponses}</span></div>
+          <Progress value={Math.min(100, phaseProgress)} className="mt-3 h-1.5" />
+          <><div className="my-14"><p className={`text-7xl font-bold ${colorCss[colorTrial.color]}`}>{locale === "zh-CN" ? colorTrial.word : colorWordEn[colorTrial.word]}</p></div><div className="grid grid-cols-3 gap-3">{(["orange", "blue", "purple"] as const).map((color) => <Button key={color} variant="outline" className="h-14 text-base" onClick={(event) => answerColor(color, event.timeStamp)}>{locale === "zh-CN" ? { orange: "橙色", blue: "蓝色", purple: "紫色" }[color] : color[0].toUpperCase() + color.slice(1)}</Button>)}</div></>
         </>}
-        <p className="mt-5 text-xs text-muted-foreground">{t.fullScore}</p>
+        <p className="mt-5 text-xs text-muted-foreground">{locale === "zh-CN" ? "请持续作答；系统将在固定 8 分钟结束后自动进入 T2。正确率和反应时仅用于中断操纵检查。" : "Keep responding. The study advances to T2 automatically after exactly 8 minutes; accuracy and response time are manipulation checks only."}</p>
       </section>
     </div>
   </div>;
-}
-
-function ScoreResult({ score, total, locale }: { score: number; total: number; locale: Locale }) {
-  const perfect = score === total;
-  return <><div className={`mx-auto grid size-16 place-items-center rounded-2xl ${perfect ? "bg-[var(--active-soft)] text-[var(--active)]" : "bg-amber-50 text-amber-700"}`}>{perfect ? <CheckCircle size={36} weight="fill" /> : <WarningCircle size={36} />}</div><p className="mt-5 text-2xl font-semibold">{score} / {total}</p><p className="mt-2 text-sm text-muted-foreground">{perfect ? (locale === "zh-CN" ? "满分通过" : "Perfect score") : (locale === "zh-CN" ? "需要满分才能继续" : "A perfect score is required")}</p></>;
 }

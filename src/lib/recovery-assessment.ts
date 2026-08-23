@@ -3,18 +3,22 @@ import type { ResearchTaskId } from "./research-task";
 
 export const reasoningRecallDimensions = ["goal", "position", "constraint", "rejectedPath", "uncertainty", "nextAction"] as const;
 export type ReasoningRecallDimension = typeof reasoningRecallDimensions[number];
-export type RecoveryProbeStage = "t1" | "t2" | "t3";
+export type RecoveryProbeStage = "t1" | "t2";
+export type RecallForm = "A" | "B";
 
 export type RecoveryProbe = {
   reasoning: Record<ReasoningRecallDimension, string>;
+  content: string[];
+  form: RecallForm;
   submittedAt: string;
 };
 
-export type RecoveryReadiness = {
-  supportRenderedAt: string;
-  readyAt: string;
-  latencyMs: number;
-  viewedSections: string[];
+export type FrozenTrace = {
+  capturedAt: string;
+  cutoffSequenceNumber: number;
+  memoLength: number;
+  chatTurnCount: number;
+  materialIds: string[];
 };
 
 // Post-task survey. Five adapted subscales — see docs/post-task-survey-references.md
@@ -62,11 +66,11 @@ export const postTaskSurveyItems: PostTaskSurveyItem[] = [
 export type RecoveryPostSurvey = Record<PostTaskSurveyItemKey, number>;
 
 export type RecoveryAssessment = {
-  version: "reasoning-recovery-v2";
+  version: "reasoning-trace-gap-v1";
   taskId: ResearchTaskId;
+  formOrder: "AB" | "BA";
   probes: Partial<Record<RecoveryProbeStage, RecoveryProbe>>;
-  participantNotes?: string;
-  readiness?: RecoveryReadiness;
+  frozenTrace?: FrozenTrace;
   postSurvey?: RecoveryPostSurvey;
 };
 
@@ -88,10 +92,39 @@ export const reasoningRecallShortLabels: Record<ReasoningRecallDimension, Record
   nextAction: { "zh-CN": "下一步行动", en: "Next action" },
 };
 
-export function createRecoveryAssessment(taskId: ResearchTaskId): RecoveryAssessment {
+const contentRecallPrompts: Record<RecallForm, Array<Record<Locale, string>>> = {
+  A: [
+    { "zh-CN": "材料给出的三年财政上限是多少？", en: "What was the three-year budget ceiling?" },
+    { "zh-CN": "方案 A 的预计三年成本是多少？", en: "What was option A's estimated three-year cost?" },
+    { "zh-CN": "方案 B 的预计覆盖率是多少？", en: "What coverage rate was estimated for option B?" },
+    { "zh-CN": "方案 C 的审批可能延后多久？", en: "How long could option C's approval be delayed?" },
+    { "zh-CN": "方案 A 的居民满意度是多少？", en: "What was option A's resident satisfaction rate?" },
+    { "zh-CN": "模型估计方案 B 可使填埋量下降多少？", en: "How much did the model estimate option B could reduce landfill volume?" },
+  ],
+  B: [
+    { "zh-CN": "方案 C 的预计三年成本是多少？", en: "What was option C's estimated three-year cost?" },
+    { "zh-CN": "方案 A 的郊区覆盖率是多少？", en: "What was option A's suburban coverage rate?" },
+    { "zh-CN": "65 岁以上居民独立完成 B 注册的比例是多少？", en: "What share of residents over 65 completed option B registration independently?" },
+    { "zh-CN": "方案 B 试点中未正确计分的记录比例是多少？", en: "What share of option B trial records were not credited correctly?" },
+    { "zh-CN": "方案 C 候选区居民反对率是多少？", en: "What was the opposition rate around option C's candidate sites?" },
+    { "zh-CN": "方案 C 的运输会抵消多少个百分点的减排收益？", en: "How many percentage points of option C's benefit would transport offset?" },
+  ],
+};
+
+export function recallFormFor(assessment: RecoveryAssessment, stage: RecoveryProbeStage): RecallForm {
+  return assessment.formOrder[stage === "t1" ? 0 : 1] as RecallForm;
+}
+
+export function getContentRecallPrompts(form: RecallForm, locale: Locale) {
+  return contentRecallPrompts[form].map((prompt) => prompt[locale]);
+}
+
+export function createRecoveryAssessment(taskId: ResearchTaskId, sessionId = "0"): RecoveryAssessment {
+  const lastHex = sessionId.replaceAll("-", "").at(-1) || "0";
   return {
-    version: "reasoning-recovery-v2",
+    version: "reasoning-trace-gap-v1",
     taskId,
+    formOrder: Number.parseInt(lastHex, 16) % 2 === 0 ? "AB" : "BA",
     probes: {},
   };
 }
@@ -102,10 +135,13 @@ export function withRecoveryProbe(assessment: RecoveryAssessment, stage: Recover
 
 export function recoveryAssessmentEventPayload(stage: RecoveryProbeStage, probe: RecoveryProbe) {
   return {
-    version: "reasoning-recovery-v2",
+    version: "reasoning-trace-gap-v1",
     stage,
+    form: probe.form,
     reasoningAnswered: reasoningRecallDimensions.filter((dimension) => probe.reasoning[dimension].trim()).length,
+    contentAnswered: probe.content.filter((answer) => answer.trim()).length,
     reasoningResponseLengths: reasoningRecallDimensions.map((dimension) => probe.reasoning[dimension].length),
+    contentResponseLengths: probe.content.map((answer) => answer.length),
   };
 }
 

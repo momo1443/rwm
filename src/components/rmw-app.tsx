@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
-import { beginStudySession, eventLog, getOrCreateParticipantId } from "@/lib/event-log";
+import { beginStudySession, eventLog, getOrCreateParticipantId, readStudyEvents } from "@/lib/event-log";
 import {
   completeRemoteStudy,
   saveRemoteStudySnapshot,
@@ -30,7 +30,7 @@ import {
   type ResearchTaskId,
 } from "@/lib/research-task";
 import type { CardRelation, Condition, Locale, ProblemStateSnapshot, ReasoningCard } from "@/lib/rmw-types";
-import { InterruptionTask, RmwCheckpoint } from "@/components/rmw-checkpoint";
+import { InterruptionTask } from "@/components/rmw-checkpoint";
 import { RecoveryProbePage } from "@/components/recovery-probe";
 import { TimedButton } from "@/components/timed-button";
 import {
@@ -45,11 +45,12 @@ import {
   type RecoveryPostSurvey,
 } from "@/lib/recovery-assessment";
 
-type Screen = "landing" | "brief" | "survey" | "work" | "city_t1" | "checkpoint" | "interruption" | "city_t2" | "workspace" | "post_survey" | "complete";
+type Screen = "landing" | "brief" | "survey" | "work" | "city_t1" | "interruption" | "city_t2" | "workspace" | "post_survey" | "complete";
 type ChatMessage = { role: "user" | "assistant"; text: string };
-// Single-protocol characterization study: Work Period 15 min, Continuation (post-D6) 5 min.
+// Single-protocol characterization study: Work 15 min, interruption 8 min,
+// then a 10-minute D6 continuation.
 const WORK_PHASE_DURATION_SECONDS = 900;
-const RECOVERY_PHASE_DURATION_SECONDS = 300;
+const RECOVERY_PHASE_DURATION_SECONDS = 600;
 
 const copy = {
   "zh-CN": {
@@ -130,7 +131,7 @@ export function RmwApp() {
         setMemo(selectedTask.starterMemo[selectedLocale]);
         setChat([{role:"assistant",text:selectedTask.assistantIntro[selectedLocale]}]);
       }
-      if (view === "checkpoint") setScreen("checkpoint");
+      if (view === "checkpoint") setScreen("city_t1");
       if (view === "interruption") setScreen("interruption");
       if (view === "recovery") setScreen("workspace");
       if (view === "recall") setScreen("city_t2");
@@ -184,9 +185,9 @@ export function RmwApp() {
             setMemo(task.starterMemo[locale]);
             setChat([{ role: "assistant", text: task.assistantIntro[locale] }]);
             setProblemState(null);
-            setRecoveryAssessment(createRecoveryAssessment(assignedTaskId));
+            setRecoveryAssessment(createRecoveryAssessment(assignedTaskId, sessionId));
             saveProblemStateSnapshot(null);
-            eventLog("research_task_started", { taskId: assignedTaskId, assignment: assignmentMode === "manual" ? "manual_test" : "condition_chosen_task_balanced", participantId, condition: assignedCondition }, { stage: "task_setup" });
+            eventLog("research_task_started", { taskId: assignedTaskId, assignment: assignmentMode === "manual" ? "manual_test" : "formal_single_protocol", protocolVersion: "reasoning-trace-gap-v1", participantId, condition: assignedCondition }, { stage: "task_setup" });
             setScreen("brief");
           } finally {
             startingRef.current = false;
@@ -196,23 +197,28 @@ export function RmwApp() {
         {screen === "survey" && <Survey locale={locale} taskId={taskId} setScreen={setScreen} t={t} />}
         {screen === "work" && <Workspace key={`work-${taskId}-${locale}`} locale={locale} condition={condition} taskId={taskId} phase="work" problemState={problemState} memo={memo} setMemo={setMemo} chat={chat} setChat={setChat} setScreen={setScreen} testMode={testMode} onPhaseOneCapture={() => {
           const capturedAt = new Date().toISOString();
-          saveRemoteStudySnapshot({ phaseOneMemo: memo, phaseOneChat: chat, phaseOneCapturedAt: capturedAt });
-          eventLog("phase_one_snapshot_captured", { taskId, memoLength: memo.length, chatTurnCount: chat.length, capturedAt }, { stage: "research_work", targetType: "memo" });
+          const frozenEvents = readStudyEvents().filter((event) => event.stage === "research_work");
+          const cutoffSequenceNumber = frozenEvents.at(-1)?.sequenceNumber || 0;
+          const materialIds = [...new Set(frozenEvents
+            .filter((event) => event.type === "material_presented" && event.targetId)
+            .map((event) => event.targetId!))];
+          const next = {
+            ...recoveryAssessment,
+            frozenTrace: { capturedAt, cutoffSequenceNumber, memoLength: memo.length, chatTurnCount: chat.length, materialIds },
+          };
+          setRecoveryAssessment(next);
+          saveRemoteStudySnapshot({ phaseOneMemo: memo, phaseOneChat: chat, phaseOneCapturedAt: capturedAt, taskAssessment: next });
+          eventLog("trace_frozen", { version: next.version, taskId, memoLength: memo.length, chatTurnCount: chat.length, capturedAt, cutoffSequenceNumber, materialIds }, { stage: "checkpoint", targetType: "trace_snapshot", targetId: taskId });
         }} t={t} />}
-        {screen === "city_t1" && <RecoveryProbePage locale={locale} stage="t1" onSubmit={(probe) => {
+        {screen === "city_t1" && <RecoveryProbePage locale={locale} stage="t1" assessment={recoveryAssessment} onSubmit={(probe) => {
           const next = withRecoveryProbe(recoveryAssessment, "t1", probe);
           setRecoveryAssessment(next);
           saveRemoteStudySnapshot({ taskAssessment: next });
           eventLog("recovery_probe_submitted", recoveryAssessmentEventPayload("t1", probe), { stage: "pre_interruption_assessment", targetType: "recall_probe", targetId: `${taskId}_t1` });
-          setScreen("checkpoint");
-        }} />}
-        {screen === "checkpoint" && <RmwCheckpoint locale={locale} condition={condition} taskId={taskId} memo={memo} messages={chat} testMode={testMode} onBack={() => setScreen("work")} onContinue={(snapshot) => {
-          if (snapshot) { setProblemState(snapshot); saveProblemStateSnapshot(snapshot); }
-          saveRemoteStudySnapshot({ memo, chat, ...(snapshot && { problemState: snapshot }), taskAssessment: recoveryAssessment });
           setScreen("interruption");
         }} />}
         {screen === "interruption" && <InterruptionTask locale={locale} fastMode={testMode} onComplete={() => setScreen("city_t2")} />}
-        {screen === "city_t2" && <RecoveryProbePage locale={locale} stage="t2" onSubmit={(probe) => {
+        {screen === "city_t2" && <RecoveryProbePage locale={locale} stage="t2" assessment={recoveryAssessment} onSubmit={(probe) => {
           const next = withRecoveryProbe(recoveryAssessment, "t2", probe);
           setRecoveryAssessment(next);
           saveRemoteStudySnapshot({ taskAssessment: next, recall: probe.reasoning });
@@ -621,8 +627,8 @@ function Workspace({
         const stage=phase==="work"?"research_work":"recovery";
         eventLog("workspace_timer_expired",{taskId,phase,durationSeconds:phaseDurationSeconds},{stage});
         if(phase==="work"){
-          onPhaseOneCaptureRef.current?.();
           eventLog("workspace_auto_advanced",{taskId,phase,nextScreen:"city_t1"},{stage});
+          onPhaseOneCaptureRef.current?.();
           setScreen("city_t1");
         }
       }
@@ -660,7 +666,7 @@ function Workspace({
     setIsLoading(true);
     setChatError(null);
     const stage=phase==="work"?"research_work":"recovery";
-    eventLog("chat_message_sent",{taskId,phase},{stage});
+    eventLog("chat_message_sent",{taskId,phase,turnIndex:history.length,text:userText},{stage,targetType:"chat_turn",targetId:`user-${history.length}`});
     try{
       const response=await fetch("/api/chat",{
         method:"POST",
@@ -675,7 +681,7 @@ function Workspace({
       const result=await response.json() as {content?:string;mode?:string;error?:string};
       if(!response.ok||!result.content)throw new Error(result.error||"No model response");
       setChat(current=>[...current,{role:"assistant",text:result.content!}]);
-      eventLog("chat_response_received",{taskId,phase,providerMode:result.mode||"unknown"},{stage});
+      eventLog("chat_response_received",{taskId,phase,turnIndex:history.length+1,text:result.content,providerMode:result.mode||"unknown"},{stage,targetType:"chat_turn",targetId:`assistant-${history.length+1}`});
     }catch(error){
       setChat(chat);
       setMessage(userText);
@@ -813,9 +819,20 @@ function MemoPanel({locale,taskId,phase,memo,setMemo,t}:{locale:Locale;taskId:Re
   const starterMemo=getResearchTask(taskId).starterMemo[locale];
   const wordCount=(text:string)=>locale==="zh-CN"?text.replace(/\s/g,"").length:(text.trim()?text.trim().split(/\s+/).length:0);
   const count=Math.max(0,wordCount(memo)-wordCount(starterMemo));
+  const compactDelta=(previous:string,next:string)=>{
+    let start=0;
+    while(start<previous.length&&start<next.length&&previous[start]===next[start])start+=1;
+    let previousEnd=previous.length;
+    let nextEnd=next.length;
+    while(previousEnd>start&&nextEnd>start&&previous[previousEnd-1]===next[nextEnd-1]){previousEnd-=1;nextEnd-=1}
+    const deletedText=previous.slice(start,previousEnd);
+    const insertedText=next.slice(start,nextEnd);
+    const maxDeltaChars=12000;
+    return {start,previousLength:previous.length,nextLength:next.length,deletedText:deletedText.slice(0,maxDeltaChars),insertedText:insertedText.slice(0,maxDeltaChars),truncated:deletedText.length>maxDeltaChars||insertedText.length>maxDeltaChars};
+  };
   return <section data-tour="memo" className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-white">
     <div className="flex h-14 shrink-0 items-center justify-between border-b px-5"><h2 className="flex items-center gap-2 font-semibold"><NotePencil size={20}/>{t.memo}</h2><span className="flex items-center gap-2 text-xs text-muted-foreground"><Check size={15}/>{t.saved} · {locale==="zh-CN"?"目标 600–900 字":"Target 600–900 words"}</span></div>
-    <div className="relative min-h-0 flex-1 px-6 py-5"><Textarea value={memo} onChange={event=>{const next=event.target.value;const nextCount=locale==="zh-CN"?next.replace(/\s/g,"").length:(next.trim()?next.trim().split(/\s+/).length:0);setMemo(next);eventLog("memo_edited",{count:nextCount,phase},{stage:phase==="work"?"research_work":"recovery",targetType:"memo"})}} className="panel-scroll h-full resize-none overflow-y-auto border-0 p-0 pb-8 text-[15px] leading-7 shadow-none focus-visible:ring-0" placeholder={t.memoPlaceholder}/><div className="pointer-events-none absolute bottom-4 right-6 rounded-md bg-white/90 px-2 py-1 text-right font-mono text-[10px] text-muted-foreground">{count} {t.words} · 600–900</div></div>
+    <div className="relative min-h-0 flex-1 px-6 py-5"><Textarea value={memo} onChange={event=>{const next=event.target.value;const nextCount=locale==="zh-CN"?next.replace(/\s/g,"").length:(next.trim()?next.trim().split(/\s+/).length:0);const delta=compactDelta(memo,next);setMemo(next);eventLog("memo_edited",{count:nextCount,phase,...delta},{stage:phase==="work"?"research_work":"recovery",targetType:"memo"})}} className="panel-scroll h-full resize-none overflow-y-auto border-0 p-0 pb-8 text-[15px] leading-7 shadow-none focus-visible:ring-0" placeholder={t.memoPlaceholder}/><div className="pointer-events-none absolute bottom-4 right-6 rounded-md bg-white/90 px-2 py-1 text-right font-mono text-[10px] text-muted-foreground">{count} {t.words} · 600–900</div></div>
   </section>;
 }
 
@@ -848,7 +865,7 @@ function PhaseOnePanel({locale,condition,taskId,memo,remaining,testMode,onPhaseO
         })}</div>
       </section>)}</div>
     </div>
-    <div className="shrink-0 border-t bg-white px-5 py-3"><div className="mb-2 flex justify-between text-[10px] text-muted-foreground"><span>{checkpointReady?(locale==="zh-CN"?"保存窗口已开放":"Save window open"):(locale==="zh-CN"?"请先完整思考 15 分钟，之后开放下一步":"Next step opens after the full 15-minute thinking period")}</span><span>{memoCount} {locale==="zh-CN"?"字":"words"} · {completed.size}/{totalCriteria} {locale==="zh-CN"?"评价点":"criteria"}</span></div><TimedButton seconds={10} ready={checkpointReady} locale={locale} label={locale==="zh-CN"?"保存推理位置并完成中断前测评":"Save reasoning state and complete the pre-interruption assessment"} blockedLabel={locale==="zh-CN"?"下一步尚未开放":"Next step is not open yet"} className="h-11 w-full text-sm" onClick={()=>{const nextScreen:Screen="city_t1";onPhaseOneCapture?.();eventLog("phase_one_checkpoint_requested",{taskId,condition,completedGoals:completedGoalCount,completedCriteria:completed.size,totalCriteria,memoCount,remaining,nextScreen},{stage:"research_work"});setScreen(nextScreen)}} /></div>
+    <div className="shrink-0 border-t bg-white px-5 py-3"><div className="mb-2 flex justify-between text-[10px] text-muted-foreground"><span>{checkpointReady?(locale==="zh-CN"?"冻结入口已开放":"Trace-freeze step is open"):(locale==="zh-CN"?"请先完整思考 15 分钟，之后开放下一步":"Next step opens after the full 15-minute thinking period")}</span><span>{memoCount} {locale==="zh-CN"?"字":"words"} · {completed.size}/{totalCriteria} {locale==="zh-CN"?"评价点":"criteria"}</span></div><TimedButton seconds={10} ready={checkpointReady} locale={locale} label={locale==="zh-CN"?"冻结当前记录并进入 T1":"Freeze the current trace and begin T1"} blockedLabel={locale==="zh-CN"?"下一步尚未开放":"Next step is not open yet"} className="h-11 w-full text-sm" onClick={()=>{const nextScreen:Screen="city_t1";eventLog("phase_one_checkpoint_requested",{taskId,condition,completedGoals:completedGoalCount,completedCriteria:completed.size,totalCriteria,memoCount,remaining,nextScreen},{stage:"research_work"});onPhaseOneCapture?.();setScreen(nextScreen)}} /></div>
   </section>;
 }
 
@@ -871,7 +888,7 @@ function ContinuationPanel({locale,taskId,remaining,testMode,setScreen,t}:{local
 function RecoveryShell({children,t}:{children:React.ReactNode;t:typeof copy[Locale]}) { return <div className="flex min-h-0 flex-col bg-[#fbfcfe]"><div className="flex h-14 shrink-0 items-center border-b px-5"><h2 className="flex items-center gap-2 font-semibold"><Brain size={20} className="text-primary"/>{t.recovery}</h2></div>{children}</div> }
 
 function PrimaryContinue({locale,remaining,testMode,setScreen,t}:{locale:Locale;remaining:number;testMode:boolean;setScreen:(s:Screen)=>void;t:typeof copy[Locale]}) {
-  if(!testMode)return <div className="shrink-0 border-t bg-white px-5 py-3"><TimedButton seconds={10} ready={remaining<=0} locale={locale} label={locale==="zh-CN"?"完成恢复阶段并继续":"Finish the recovery period and continue"} blockedLabel={locale==="zh-CN"?`固定恢复阶段进行中 · 剩余 ${Math.ceil(remaining/60)} 分钟`:`Fixed recovery period · ${Math.ceil(remaining/60)} min remaining`} className="h-11 w-full text-sm" onClick={()=>{eventLog("recovery_period_completed",{remaining},{stage:"recovery"});setScreen("post_survey")}} /></div>;
+  if(!testMode)return <div className="shrink-0 border-t bg-white px-5 py-3"><TimedButton seconds={10} ready={remaining<=0} locale={locale} label={locale==="zh-CN"?"完成 10 分钟延续任务并继续":"Finish the 10-minute continuation"} blockedLabel={locale==="zh-CN"?`D6 延续任务进行中 · 剩余 ${Math.ceil(remaining/60)} 分钟`:`D6 continuation · ${Math.ceil(remaining/60)} min remaining`} className="h-11 w-full text-sm" onClick={()=>{eventLog("continuation_completed",{remaining,durationSeconds:RECOVERY_PHASE_DURATION_SECONDS},{stage:"recovery"});setScreen("post_survey")}} /></div>;
   return <div className="shrink-0 border-t bg-white px-5 py-3"><TimedButton seconds={5} locale={locale} label={t.endStudy} className="h-11 w-full text-sm" onClick={()=>{eventLog("end_study_clicked",{testMode:true,remaining},{stage:"recovery"});setScreen("post_survey")}} /></div>;
 }
 

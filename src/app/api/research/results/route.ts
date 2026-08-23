@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
           const assessmentVersion = result.task_assessment && typeof result.task_assessment === "object" && "version" in result.task_assessment
             ? String(result.task_assessment.version)
             : null;
-          const recoveryAssessment = assessmentVersion === "reasoning-recovery-v2" ? result.task_assessment as RecoveryAssessment : null;
+          const recoveryAssessment = assessmentVersion === "reasoning-trace-gap-v1" ? result.task_assessment as RecoveryAssessment : null;
           return {
             blind_id: blindIdFor(result.session_id),
             locale: result.locale,
@@ -76,14 +76,14 @@ export async function GET(request: NextRequest) {
             phase_one_memo: result.phase_one_memo,
             final_memo: result.memo,
             t1_recall: formatReasoningRecall(recoveryAssessment?.probes.t1?.reasoning, locale) || null,
-            t3_recall: formatReasoningRecall(recoveryAssessment?.probes.t3?.reasoning, locale) || null,
+            t2_recall: formatReasoningRecall(recoveryAssessment?.probes.t2?.reasoning, locale) || null,
             blind_review_scores: result.blind_review_scores,
             blind_review_note: result.blind_review_note,
             blind_reviewed_at: result.blind_reviewed_at,
           };
         })
         .sort((left, right) => left.blind_id.localeCompare(right.blind_id));
-      return NextResponse.json({ mode: resultStorageMode(), rubricVersion: "recovery-outcome-v3-recall-pass", results: eligible });
+      return NextResponse.json({ mode: resultStorageMode(), rubricVersion: "reasoning-trace-gap-v1-t1-t2", results: eligible });
     }
     const exportMode = request.nextUrl.searchParams.get("export");
     if (exportMode === "1" || exportMode === "analysis") {
@@ -92,7 +92,7 @@ export async function GET(request: NextRequest) {
         : database.results;
       const sessionIds = new Set(results.map((result) => result.session_id));
       return NextResponse.json({
-        schemaVersion: "rmw-research-results-v10-reasoning-recovery",
+        schemaVersion: "rmw-research-results-v11-trace-gap",
         storageMode: resultStorageMode(),
         exportedAt: new Date().toISOString(),
         exportMode: exportMode === "analysis" ? "analysis-ready" : "all-raw",
@@ -129,8 +129,8 @@ export async function GET(request: NextRequest) {
         const assessmentVersion = result.task_assessment && typeof result.task_assessment === "object" && "version" in result.task_assessment
           ? String(result.task_assessment.version)
           : null;
-        const recoveryAssessment = assessmentVersion === "reasoning-recovery-v2" ? result.task_assessment as RecoveryAssessment : null;
-        const probeCount = recoveryAssessment ? ["t1", "t2", "t3"].filter((stage) => Boolean(recoveryAssessment.probes[stage as keyof typeof recoveryAssessment.probes])).length : 0;
+        const recoveryAssessment = assessmentVersion === "reasoning-trace-gap-v1" ? result.task_assessment as RecoveryAssessment : null;
+        const probeCount = recoveryAssessment ? ["t1", "t2"].filter((stage) => Boolean(recoveryAssessment.probes[stage as keyof typeof recoveryAssessment.probes])).length : 0;
         const phaseOneMaterialCompletionIds = new Set(sessionEvents.filter((event) => event.event_type === "material_exposure_completed" && event.stage === "research_work").map((event) => event.target_id).filter(Boolean));
         const recoveryTabs = [...new Set(sessionEvents.filter((event) => event.event_type === "recovery_tab_viewed").map((event) => event.target_id).filter((value): value is string => Boolean(value)))];
         const researcherTest = sessionEvents.some((event) => event.event_type === "research_task_started" && event.payload.assignment === "manual_test");
@@ -160,6 +160,7 @@ export async function GET(request: NextRequest) {
         task_steps_complete: milestones.filter((milestone) => milestone.complete).length,
         task_steps_total: milestones.length,
         interruption_completed: interruption.completed,
+        interruption_duration_seconds: interruption.durationSeconds,
         letter_accuracy: interruption.letter.accuracy,
         letter_attempts: interruption.letter.attempts,
         color_accuracy: interruption.color.accuracy,
@@ -176,10 +177,10 @@ export async function GET(request: NextRequest) {
         researcher_test: researcherTest,
         assessment_version: assessmentVersion,
         recovery_probe_count: probeCount,
-        recovery_probe_complete: probeCount === 3,
-        recovery_readiness_seconds: recoveryAssessment?.readiness ? recoveryAssessment.readiness.latencyMs / 1000 : null,
-        participant_notes_present: Boolean(recoveryAssessment?.participantNotes),
-        post_survey_complete: Boolean(recoveryAssessment?.postSurvey && Object.values(recoveryAssessment.postSurvey).length === 5),
+        recovery_probe_complete: probeCount === 2,
+        content_probe_complete: Boolean(recoveryAssessment?.probes.t1?.content.length === 6 && recoveryAssessment?.probes.t2?.content.length === 6),
+        frozen_trace_present: Boolean(recoveryAssessment?.frozenTrace && result.phase_one_captured_at),
+        post_survey_complete: Boolean(recoveryAssessment?.postSurvey && Object.values(recoveryAssessment.postSurvey).length === 14),
       };})
       .sort((left, right) => right.created_at.localeCompare(left.created_at));
     return NextResponse.json({ mode: resultStorageMode(), results });
