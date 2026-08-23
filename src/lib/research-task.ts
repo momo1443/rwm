@@ -99,8 +99,8 @@ const tasks: Record<ResearchTaskId, ResearchTask> = {
     overview: { "zh-CN": "你将阅读 5 份相互冲突的材料。中断后会出现一份可能改变当前选择的新证据。", en: "You will read five conflicting sources. After the interruption, new evidence may change your choice." },
     familiarity: { "zh-CN": "城市公共政策与多标准决策", en: "urban public policy and multi-criteria decision making" },
     starterMemo: {
-      "zh-CN": "决策问题：和安市应选择哪一种治理方案？\n\n评价标准及权重：\n\n方案 A：社区增员督导\n\n方案 B：智能投放与按量激励\n\n方案 C：集中式机械分选\n\n当前首选及理由：\n\n已排除方案及理由：\n\n当前不确定点：",
-      en: "Decision: Which option should He'an choose?\n\nCriteria and weights:\n\nOption A: community staffing\n\nOption B: smart collection and incentives\n\nOption C: centralized mechanical sorting\n\nCurrent preference and rationale:\n\nRejected option and rationale:\n\nCurrent uncertainty:",
+      "zh-CN": "决策问题：和安市应选择哪一种治理方案？\n\n评价标准及权重：\n\n方案 A：社区增员督导\n\n方案 B：智能投放与按量激励\n\n方案 C：集中式机械分选",
+      en: "Decision: Which option should He'an choose?\n\nCriteria and weights:\n\nOption A: community staffing\n\nOption B: smart collection and incentives\n\nOption C: centralized mechanical sorting",
     },
     assistantIntro: { "zh-CN": "我会帮助你比较 A、B、C 三个方案，但不会替你做最终选择。请先告诉我你最看重哪些标准，以及为什么。", en: "I will help compare options A, B, and C without making the final choice for you. Start with the criteria you consider most important and why." },
     phaseOneGoals: decisionTaskGoals,
