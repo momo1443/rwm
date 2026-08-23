@@ -16,13 +16,13 @@ Open `http://localhost:3000`. Useful review routes:
 - `/?view=task` — Phase 1 and final memo requirements
 - `/?view=work` — Phase 1 workspace for the selected task
 - `/?view=checkpoint` — T1 review route (the trace is frozen before this screen)
-- `/?view=interruption` — fixed-duration 2-back and color-interference block
+- `/?view=interruption` — two-game 2-back and color-interference block
 - `/?view=recovery` — D6 continuation workspace
 - `/?view=recall` — T2 unsupported-recall route
 - `/admin` — password-protected researcher results console
 - `/admin/blind-review` — identity-blinded memo and T1/T2 coding
 
-The participant flow exposes neither a task chooser nor a recovery condition. The formal protocol is fixed at 15 minutes of work, an immutable trace freeze, T1, an 8-minute interruption, T2, D6, and a 10-minute continuation. Add `?test=1` only for local interface review; test runs are excluded automatically.
+The participant flow exposes neither a task chooser nor a recovery condition. The formal protocol is 15 minutes of work, an immutable trace freeze, T1, two interruption games, T2, D6, and a 10-minute continuation. Add `?test=1` only for local interface review; test runs are excluded automatically.
 
 ## DeepSeek
 
@@ -49,7 +49,7 @@ The participant does not choose the model. The server uses `DEEPSEEK_MODEL`, fal
 1. Work with D1–D5, the AI tutor, and the memo editor for exactly 15 minutes.
 2. Freeze the memo, conversation, material-exposure set, and event cutoff before any recall prompt appears.
 3. Collect T1: six reasoning-position items plus six content items (counterbalanced Form A/B).
-4. Run a fixed 8-minute interruption: four minutes of continuous letter 2-back followed by four minutes of continuous color interference. Accuracy and response time are manipulation checks, not pass/fail gates.
+4. Complete two untimed interruption games: six letter 2-back trials followed by six color-interference trials. Accuracy, response time, and actual completion duration are process checks, not pass/fail gates.
 5. Collect unsupported T2 using the parallel content form and the same six reasoning dimensions. No materials, transcript, memo, summary, cards, or other recovery aid are visible.
 6. Reveal D6 and run a fixed 10-minute continuation before the post-task survey.
 

@@ -47,8 +47,8 @@ import {
 
 type Screen = "landing" | "brief" | "survey" | "work" | "city_t1" | "interruption" | "city_t2" | "workspace" | "post_survey" | "complete";
 type ChatMessage = { role: "user" | "assistant"; text: string };
-// Single-protocol characterization study: Work 15 min, interruption 8 min,
-// then a 10-minute D6 continuation.
+// Single-protocol characterization study: Work 15 min, complete two
+// interruption games, then a 10-minute D6 continuation.
 const WORK_PHASE_DURATION_SECONDS = 900;
 const RECOVERY_PHASE_DURATION_SECONDS = 600;
 
