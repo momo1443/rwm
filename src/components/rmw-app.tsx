@@ -14,6 +14,7 @@ import { Progress } from "@/components/ui/progress";
 import { beginStudySession, eventLog, getOrCreateParticipantId, readStudyEvents } from "@/lib/event-log";
 import {
   completeRemoteStudy,
+  resumePendingCompletedStudy,
   saveRemoteStudySnapshot,
   startRemoteStudySession,
 } from "@/lib/remote-results";
@@ -139,6 +140,11 @@ export function RmwApp() {
       if (view === "work") setScreen("work");
       if (view === "city-t1") setScreen("city_t1");
       if (view === "city-t2") setScreen("city_t2");
+      void resumePendingCompletedStudy().then((saved) => {
+        if (!saved) return;
+        setCompletionStatus("saved");
+        setScreen("complete");
+      });
     });
     return () => cancelAnimationFrame(frame);
   }, []);

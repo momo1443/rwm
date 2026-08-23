@@ -21,6 +21,7 @@ type Snapshot = {
 };
 
 let flushQueue: Promise<boolean> = Promise.resolve(true);
+const MAX_KEEPALIVE_BODY_BYTES = 60_000;
 
 function activeSessionId() {
   return typeof window === "undefined" ? "" : sessionStorage.getItem(SESSION_KEY) || "";
@@ -46,18 +47,32 @@ function writeObject(key: string, value: object) {
 
 async function postResult(body: Record<string, unknown>) {
   try {
+    const serializedBody = JSON.stringify(body);
+    const keepalive = new TextEncoder().encode(serializedBody).byteLength <= MAX_KEEPALIVE_BODY_BYTES;
     const response = await fetch("/api/results", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-      keepalive: true,
+      body: serializedBody,
+      keepalive,
       signal: AbortSignal.timeout(8_000),
     });
-    if (!response.ok) return null;
+    if (!response.ok) {
+      console.error("Result request failed", { action: body.action, status: response.status });
+      return null;
+    }
     return await response.json() as Record<string, unknown>;
-  } catch {
+  } catch (error) {
+    console.error("Result request failed", {
+      action: body.action,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return null;
   }
+}
+
+function hasCompletedPostSurvey(snapshot: Snapshot) {
+  if (!snapshot.taskAssessment || typeof snapshot.taskAssessment !== "object") return false;
+  return "postSurvey" in snapshot.taskAssessment && Boolean(snapshot.taskAssessment.postSurvey);
 }
 
 async function flushOutboxes(sessionId: string, completed = false): Promise<boolean> {
@@ -141,5 +156,14 @@ export async function completeRemoteStudy(input: Pick<Snapshot, "memo" | "chat" 
   if (!sessionId) return false;
   const key = storageKey(SNAPSHOT_OUTBOX_PREFIX, sessionId);
   writeObject(key, { ...readObject<Snapshot>(key, {}), ...input });
+  return queueFlush(sessionId, true);
+}
+
+export async function resumePendingCompletedStudy() {
+  if (typeof window === "undefined") return false;
+  const sessionId = activeSessionId();
+  if (!sessionId || sessionStorage.getItem(TOKEN_SESSION_KEY) !== sessionId) return false;
+  const snapshot = readObject<Snapshot>(storageKey(SNAPSHOT_OUTBOX_PREFIX, sessionId), {});
+  if (!hasCompletedPostSurvey(snapshot)) return false;
   return queueFlush(sessionId, true);
 }
