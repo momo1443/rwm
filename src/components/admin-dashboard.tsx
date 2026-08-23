@@ -83,9 +83,7 @@ const conditionLabels: Record<string, string> = {
   control: "旧版无辅助对照",
 };
 const activeConditionDefinitions = [
-  { id: "rmw", label: "方式一", description: "完整 RMW：AI 恢复摘要、推理卡片与知识网络。" },
-  { id: "rmw_no_summary", label: "方式二", description: "用户自主笔记基线：无 AI 恢复摘要、推理卡片或知识网络，恢复仅依托被试手写工作区笔记。" },
-  { id: "summary_only", label: "方式三", description: "纯 AI 恢复摘要基线：中断前后台静默生成 Problem State（无卡片展示与校准预演），中断后仅提供 AI 恢复摘要。" },
+  { id: "rmw", label: "方式一", description: "单一流程：所有参与者完成相同任务与中断，中断后不获得任何恢复支持（无摘要、卡片或知识网络）。" },
 ] as const;
 const exclusionReasons = ["研究者测试", "自动化或非真实被试", "未完成实验", "技术故障", "重复记录", "不符合纳入标准", "被试要求撤回", "其他"];
 
@@ -171,7 +169,7 @@ function CohortOverview({ results }: { results: ResultSummary[] }) {
 }
 
 function ConditionDesignLegend() {
-  return <section className="mb-6 rounded-xl border bg-white p-5"><h2 className="font-semibold">恢复方式定义</h2><p className="mt-1 text-xs text-muted-foreground">以下机制说明仅在研究者后台显示；参与者入口只显示“方式一、方式二、方式三”。</p><div className="mt-4 grid gap-3 lg:grid-cols-3">{activeConditionDefinitions.map(item=><article key={item.id} className="rounded-lg border p-4"><Badge>{item.label}</Badge><p className="mt-3 text-xs leading-5 text-muted-foreground">{item.description}</p><p className="mt-2 font-mono text-[9px] text-muted-foreground">{item.id}</p></article>)}</div></section>;
+  return <section className="mb-6 rounded-xl border bg-white p-5"><h2 className="font-semibold">研究协议</h2><p className="mt-1 text-xs text-muted-foreground">当前为单一流程刻画研究；下表其余标签（方式二/三、旧任务）仅用于标注历史测试记录。</p><div className="mt-4 grid gap-3 lg:grid-cols-3">{activeConditionDefinitions.map(item=><article key={item.id} className="rounded-lg border p-4"><Badge>{item.label}</Badge><p className="mt-3 text-xs leading-5 text-muted-foreground">{item.description}</p><p className="mt-2 font-mono text-[9px] text-muted-foreground">{item.id}</p></article>)}</div></section>;
 }
 
 function formatPercent(value: number | null) {

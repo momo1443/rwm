@@ -73,9 +73,9 @@ const requestSchema = z.discriminatedUnion("action", [
     sessionId: sessionIdSchema,
     participantCode: participantCodeSchema,
     locale: z.enum(["zh-CN", "en"]),
-    condition: z.enum(["rmw", "rmw_no_summary", "summary_only"]),
+    condition: z.enum(["rmw"]),
     taskId: z.enum(researchTaskIds),
-    assignmentMode: z.enum(["auto", "manual", "manual_condition"]).default("auto"),
+    assignmentMode: z.enum(["manual", "manual_condition"]),
     token: z.string().min(1).max(2000).optional(),
   }),
   z.object({ action: z.literal("event"), token: z.string().min(1).max(2000), event: eventSchema }),
@@ -91,40 +91,14 @@ async function participantFromToken(token: string, secret: string) {
   return {
     participantCode: payload.participantCode,
     sessionId: payload.sessionId,
-    assignmentMode: payload.assignmentMode === "manual"
-      ? "manual" as const
-      : payload.assignmentMode === "manual_condition"
-        ? "manual_condition" as const
-        : "auto" as const,
+    assignmentMode: payload.assignmentMode === "manual_condition" ? "manual_condition" as const : "manual" as const,
   };
 }
 
-const activeConditions = ["rmw", "rmw_no_summary", "summary_only"] as const;
-
-async function balancedAssignment() {
-  const database = await readAllResults();
-  const activeCutoff = Date.now() - 12 * 60 * 60 * 1000;
-  const activeRows = database.results.filter((result) => {
-    if (result.analysis_status === "trashed") return false;
-    const isCurrentCompletedCohort = result.status === "completed"
-      && result.task_assessment
-      && typeof result.task_assessment === "object"
-      && "version" in result.task_assessment
-      && result.task_assessment.version === "reasoning-recovery-v2";
-    const isCurrentActiveRun = result.status === "started" && new Date(result.created_at).getTime() >= activeCutoff;
-    return Boolean(isCurrentCompletedCohort || isCurrentActiveRun);
-  });
-  const cells = researchTaskIds.flatMap((taskId) => activeConditions.map((condition) => ({ taskId, condition })));
-  const counts = cells.map((cell) => ({
-    ...cell,
-    count: activeRows.filter((row) => row.task_id === cell.taskId && row.condition === cell.condition).length,
-  }));
-  const minimum = Math.min(...counts.map((cell) => cell.count));
-  const leastFilled = counts.filter((cell) => cell.count === minimum);
-  return leastFilled[randomInt(leastFilled.length)];
-}
-
-async function balancedTaskAssignment(condition: (typeof activeConditions)[number]) {
+// Single-protocol study: only one task exists, so this trivially always
+// returns it. Kept (rather than hardcoded) so the balancing logic still
+// works unchanged if a second task is ever reintroduced.
+async function balancedTaskAssignment(condition: "rmw") {
   const database = await readAllResults();
   const activeCutoff = Date.now() - 12 * 60 * 60 * 1000;
   const activeRows = database.results.filter((result) => {
@@ -173,11 +147,7 @@ export async function POST(request: Request) {
         taskId = existing.task_id as typeof taskId;
         assignmentMode = resumedSession.assignmentMode;
       } else {
-        if (assignmentMode === "auto") {
-          const assigned = await balancedAssignment();
-          condition = assigned.condition;
-          taskId = assigned.taskId;
-        } else if (assignmentMode === "manual_condition") {
+        if (assignmentMode === "manual_condition") {
           taskId = await balancedTaskAssignment(condition);
         }
         await createParticipant({ sessionId, participantCode, locale, condition, taskId });

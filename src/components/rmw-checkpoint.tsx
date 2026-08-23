@@ -7,35 +7,18 @@ import {
   Check,
   CheckCircle,
   Clock,
-  Graph,
-  LinkSimple,
-  NotePencil,
   PauseCircle,
-  PushPin,
   Question,
-  Target,
   WarningCircle,
 } from "@phosphor-icons/react";
-import {
-  Background,
-  Controls,
-  Handle,
-  Position,
-  ReactFlow,
-  type Edge,
-  type Node,
-} from "@xyflow/react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { Textarea } from "@/components/ui/textarea";
 import { GuidedTourOverlay } from "@/components/guided-tour";
 import { eventLog, readProblemStateActions } from "@/lib/event-log";
-import { problemStateToContinuousSummary } from "@/lib/problem-state";
 import type { ResearchTaskId } from "@/lib/research-task";
 import type {
   Condition,
-  EpistemicStatus,
   Locale,
   ProblemStateCard,
   ProblemStateRelation,
@@ -52,25 +35,11 @@ type ExtractedCard = Omit<ProblemStateCard, "content" | "detail" | "source" | "w
 const labels = {
   "zh-CN": {
     title: "保存窗口",
-    subtitle: "系统会结合你实际写下的 memo、人机对话与研究操作轨迹提取候选 Problem State。操作轨迹只用于判断研究进度，不代表你认同某项结论。",
+    subtitle: "系统会在后台结合你实际写下的 memo、人机对话与研究操作轨迹冻结并分析当前推理状态，用于后续研究分析。此过程不会向你展示任何提取结果，也不需要你做任何操作。",
     task: "主任务",
     save: "保存窗口",
     break: "中断任务",
     resume: "恢复",
-    main: "主目标",
-    active: "活跃子目标",
-    suspended: "挂起目标",
-    rejected: "已排除路径",
-    candidates: "候选 Problem State",
-    network: "知识网络",
-    source: "来源",
-    confidence: "置信度",
-    accept: "接受",
-    edit: "编辑",
-    pin: "置顶",
-    uncertain: "存疑",
-    expire: "过期",
-    calibrateHint: "点选卡片后可接受、编辑、置顶、标为存疑或过期。绿色=活跃，黄色=存疑，灰色=已过期。",
     saveAndBreak: "保存并进入中断任务",
     waiting: "准备阶段将在 3 分钟后结束",
     early: "请完成 3 分钟的条件内准备，倒计时结束后才可进入中断任务。",
@@ -91,25 +60,11 @@ const labels = {
   },
   en: {
     title: "Save window",
-    subtitle: "The system combines your memo, human-AI conversation, and research-action trace to extract candidate problem state. Actions indicate progress, not endorsement of a conclusion.",
+    subtitle: "The system freezes and analyzes your memo, human-AI conversation, and research-action trace in the background for later research analysis. Nothing is shown to you here, and no action is required.",
     task: "Primary task",
     save: "Save window",
     break: "Interruption",
     resume: "Resume",
-    main: "Main goal",
-    active: "Active subgoals",
-    suspended: "Suspended goals",
-    rejected: "Rejected path",
-    candidates: "Candidate problem state",
-    network: "Knowledge network",
-    source: "Source",
-    confidence: "Confidence",
-    accept: "Accept",
-    edit: "Edit",
-    pin: "Pin",
-    uncertain: "Uncertain",
-    expire: "Expire",
-    calibrateHint: "Select a card to accept, edit, pin, mark uncertain, or expire. Green = active, amber = uncertain, gray = expired.",
     saveAndBreak: "Save and begin interruption",
     waiting: "Preparation ends after three minutes",
     early: "Please use the full three-minute condition-specific preparation period before the interruption.",
@@ -172,186 +127,16 @@ function formatClock(totalSeconds: number) {
   return `${String(Math.floor(totalSeconds / 60)).padStart(2, "0")}:${String(totalSeconds % 60).padStart(2, "0")}`;
 }
 
-function StateTile({
-  card,
-  locale,
-  selected,
-  onSelect,
-}: {
-  card: ProblemStateCard;
-  locale: Locale;
-  selected?: boolean;
-  onSelect?: () => void;
-}) {
-  const style = card.status === "uncertain"
-    ? "border-amber-200 bg-amber-50/70"
-    : card.status === "expired"
-      ? "border-slate-200 bg-slate-50 text-slate-500"
-      : "border-emerald-200 bg-emerald-50/60";
-  return <button
-    type="button"
-    onClick={onSelect}
-    className={`w-full rounded-xl border p-3 text-left transition ${style} ${selected ? "ring-2 ring-primary/30 shadow-sm" : "hover:shadow-sm"} ${onSelect ? "cursor-pointer" : ""}`}
-  >
-    <div className="flex items-center justify-between">
-      <span className="text-[9px] font-semibold uppercase tracking-wider">{card.goalLevel || card.kind}</span>
-      <span className="flex items-center gap-1 text-[9px] text-muted-foreground">
-        {card.priority === "pinned" && <PushPin size={11} weight="fill" className="text-primary" />}
-        {card.confidence}%
-      </span>
-    </div>
-    <p className="mt-2 text-xs font-semibold leading-5 text-foreground">{card.content[locale]}</p>
-    <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-muted-foreground">{card.source[locale]}</p>
-  </button>;
-}
-
-function CheckpointInspector({
-  card,
-  locale,
-  t,
-  updateStatus,
-  togglePin,
-  updateContent,
-}: {
-  card: ProblemStateCard;
-  locale: Locale;
-  t: (typeof labels)[Locale];
-  updateStatus: (id: string, status: EpistemicStatus) => void;
-  togglePin: (id: string) => void;
-  updateContent: (id: string, value: string) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(card.content[locale]);
-  return <aside className="flex h-full min-h-0 flex-col rounded-xl border bg-[#fcfcfd] p-4">
-    <div className="flex items-start justify-between gap-2">
-      <div>
-        <Badge variant="outline" className="text-[9px]">{card.goalLevel || card.kind}</Badge>
-        <h3 className="mt-3 text-sm font-semibold leading-5">{card.content[locale]}</h3>
-      </div>
-      {card.priority === "pinned" && <PushPin size={16} weight="fill" className="shrink-0 text-primary" />}
-    </div>
-    {editing ? <div className="mt-4">
-      <Textarea value={draft} onChange={(event) => setDraft(event.target.value)} className="min-h-24 text-xs leading-5" />
-      <div className="mt-2 flex gap-2">
-        <Button size="sm" onClick={() => { updateContent(card.id, draft); setEditing(false); }}><Check />{t.accept}</Button>
-        <Button size="sm" variant="ghost" onClick={() => { setDraft(card.content[locale]); setEditing(false); }}>{locale === "zh-CN" ? "取消" : "Cancel"}</Button>
-      </div>
-    </div> : <p className="mt-3 text-xs leading-5 text-muted-foreground">{card.detail[locale]}</p>}
-    <div className="mt-4 rounded-lg border bg-white p-3">
-      <div className="flex gap-2">
-        <LinkSimple size={14} className="mt-0.5 shrink-0 text-primary" />
-        <div>
-          <p className="text-[10px] font-semibold">{t.source}</p>
-          <p className="mt-1 text-[10px] leading-4 text-muted-foreground">{card.source[locale] || "—"}</p>
-        </div>
-      </div>
-      {card.why[locale] && <p className="mt-3 text-[10px] leading-4 text-muted-foreground">{card.why[locale]}</p>}
-    </div>
-    <div className="mt-4">
-      <div className="mb-1 flex justify-between text-[10px]"><span>{t.confidence}</span><span>{card.confidence}%</span></div>
-      <Progress value={card.confidence} className="h-1.5" />
-    </div>
-    <div className="mt-5 grid grid-cols-2 gap-2">
-      <Button size="sm" variant={card.status === "active" ? "secondary" : "outline"} onClick={() => updateStatus(card.id, "active")}><CheckCircle />{t.accept}</Button>
-      <Button size="sm" variant="outline" onClick={() => setEditing(true)}><NotePencil />{t.edit}</Button>
-      <Button size="sm" variant={card.priority === "pinned" ? "secondary" : "outline"} onClick={() => togglePin(card.id)}><PushPin />{t.pin}</Button>
-      <Button size="sm" variant={card.status === "uncertain" ? "secondary" : "outline"} onClick={() => updateStatus(card.id, "uncertain")}><WarningCircle />{t.uncertain}</Button>
-      <Button size="sm" variant={card.status === "expired" ? "secondary" : "ghost"} className="col-span-2" onClick={() => updateStatus(card.id, "expired")}><PauseCircle />{t.expire}</Button>
-    </div>
-    <p className="mt-4 text-[9px] leading-4 text-muted-foreground">{t.calibrateHint}</p>
-  </aside>;
-}
-
-type FlowData = { label: string; status: EpistemicStatus; selected: boolean };
-function FlowNode({ data }: { data: FlowData }) {
-  const tone = data.status === "uncertain"
-    ? "border-amber-400 bg-amber-50"
-    : data.status === "expired"
-      ? "border-slate-300 bg-slate-50"
-      : "border-emerald-400 bg-emerald-50";
-  return <div className={`w-[146px] rounded-xl border-2 px-3 py-2 text-center text-[10px] font-medium leading-4 shadow-sm ${tone} ${data.selected ? "ring-4 ring-indigo-100" : ""}`}>
-    <Handle type="target" position={Position.Left} />
-    {data.label}
-    <Handle type="source" position={Position.Right} />
-  </div>;
-}
-const nodeTypes = { reasoning: FlowNode };
-
-function CheckpointNetwork({
-  cards,
-  relations,
-  locale,
-  selected,
-  onSelect,
-}: {
-  cards: ProblemStateCard[];
-  relations: ProblemStateRelation[];
-  locale: Locale;
-  selected: string;
-  onSelect: (id: string) => void;
-}) {
-  const positions = useMemo(() => {
-    const result: Record<string, { x: number; y: number }> = {};
-    const groups = [
-      cards.filter((card) => card.goalLevel === "main"),
-      cards.filter((card) => card.goalLevel === "subgoal"),
-      cards.filter((card) => card.goalLevel === "suspended"),
-      cards.filter((card) => !card.goalLevel),
-    ];
-    groups.forEach((group, row) => group.forEach((card, column) => {
-      result[card.id] = { x: 60 + column * 190, y: 20 + row * 105 };
-    }));
-    return result;
-  }, [cards]);
-  const nodes = useMemo<Node<FlowData>[]>(() => cards.map((card) => ({
-    id: card.id,
-    type: "reasoning",
-    position: positions[card.id] || { x: 0, y: 0 },
-    data: { label: card.content[locale], status: card.status, selected: card.id === selected },
-  })), [cards, locale, positions, selected]);
-  const edges = useMemo<Edge[]>(() => relations.map((relation) => ({
-    id: relation.id,
-    source: relation.sourceCardId,
-    target: relation.targetCardId,
-    label: relation.relationType,
-    animated: relation.relationType === "leads_to",
-    style: { stroke: relation.relationType === "challenges" ? "#c58a2c" : "#8992a6" },
-    labelStyle: { fontSize: 9, fill: "#687083" },
-  })), [relations]);
-  return <div className="h-[360px] overflow-hidden rounded-2xl border bg-white">
-    <ReactFlow
-      nodes={nodes}
-      edges={edges}
-      nodeTypes={nodeTypes}
-      fitView
-      minZoom={0.45}
-      maxZoom={1.5}
-      onNodeClick={(_, node) => {
-        onSelect(node.id);
-        eventLog("checkpoint_network_node_clicked", { id: node.id }, { stage: "checkpoint", targetType: "reasoning_card", targetId: node.id });
-      }}
-    >
-      <Background gap={22} size={1} color="#e7e9ef" />
-      <Controls position="bottom-right" showInteractive={false} />
-    </ReactFlow>
-  </div>;
-}
 
 function CheckpointGuide({ locale, open, onOpenChange }: { locale: Locale; open: boolean; onOpenChange: (open: boolean) => void }) {
   const steps = useMemo(() => locale === "zh-CN" ? [
-    { target: "checkpoint-timeline", title: "保存阶段时间轴", body: "这里展示实验流程。您当前处于第 2 阶段「保存窗口 (Save Window)」，系统正结合第一阶段的记录归纳 Problem State。" },
-    { target: "checkpoint-goals", title: "目标结构分布", body: "此处按层级汇总主目标、活跃子目标、挂起分支与弃用路径。它们构成了研究推理的核心主干。" },
-    { target: "checkpoint-state", title: "候选 Problem State 列表", body: "由 DeepSeek 提取的推理卡片。每张卡片对应一个推理要点，左侧边框颜色代表其认知状态（Active / Uncertain / Expired）。" },
-    { target: "checkpoint-inspector", title: "卡片校准检视器", body: "在此检视选中的卡片。您可以切换状态、置顶关键要点、编辑说明文字，或点击查阅原始对话与材料证据。" },
-    { target: "checkpoint-network", title: "知识网络逻辑图谱", body: "以推导网络直观呈现思考块之间的因果推导与辩驳挑战逻辑。点击网络中的节点可快速选中并校准卡片。" },
+    { target: "checkpoint-timeline", title: "保存阶段时间轴", body: "这里展示实验流程。您当前处于第 2 阶段「保存窗口 (Save Window)」，系统正在后台冻结并分析第一阶段的记录，不会向您展示分析结果。" },
+    { target: "checkpoint-saved", title: "推理状态已保存", body: "系统已完成后台记录，无需您做任何操作，等待窗口结束后即可进入中断任务。" },
     { target: "checkpoint-empty", title: "Problem State 提取说明", body: "当未能成功归纳或处于测试状态时，此区域会显示状态提示。在实际实验中，需在工作区写入有效的思考记录以触发提取。" },
     { target: "checkpoint-footer", title: "保存与进度控制", body: "此处展示当前保存窗口的等待倒计时或完成状态。在测试模式或倒计时结束后，可点击右侧按钮进入下一阶段。" },
   ] : [
-    { target: "checkpoint-timeline", title: "Save Window Stage", body: "Indicates you are in Stage 2 (Save Window). AI summarizes your Problem State based on your Phase 1 work." },
-    { target: "checkpoint-goals", title: "Goal Structure", body: "Summarizes the main goal, active subgoals, suspended tasks, and rejected paths forming your reasoning framework." },
-    { target: "checkpoint-state", title: "Candidate Problem State", body: "Reasoning cards extracted by DeepSeek. Card colors reflect their epistemic status (Active, Uncertain, Expired)." },
-    { target: "checkpoint-inspector", title: "Card Inspector", body: "Inspect selected cards here. Calibrate status, pin key points, edit text, or trace back to chat/material evidence." },
-    { target: "checkpoint-network", title: "Knowledge Network", body: "Visualizes logical leads-to and challenges relations between reasoning blocks. Click nodes to select and calibrate matching cards." },
+    { target: "checkpoint-timeline", title: "Save Window Stage", body: "Indicates you are in Stage 2 (Save Window). The system freezes and analyzes your Phase 1 record in the background; nothing is shown to you." },
+    { target: "checkpoint-saved", title: "Reasoning state saved", body: "The background record is complete. No action is required; the interruption begins once the wait period ends." },
     { target: "checkpoint-empty", title: "Problem State Status", body: "Shows extraction status and notices when cards are not yet generated or when testing without API keys." },
     { target: "checkpoint-footer", title: "Save & Progress Control", body: "Displays countdown timer or completion status. In test mode or when finished, proceed to the next stage using the right button." },
   ], [locale]);
@@ -383,38 +168,15 @@ export function RmwCheckpoint({
   messages: Array<{ role: "user" | "assistant"; text: string }>;
   testMode: boolean;
   onBack: () => void;
-  onContinue: (snapshot?: ProblemStateSnapshot, participantNotes?: string) => void;
+  onContinue: (snapshot?: ProblemStateSnapshot) => void;
 }) {
   const t = labels[locale];
   const [cards, setCards] = useState<ProblemStateCard[]>([]);
   const [relations, setRelations] = useState<ProblemStateRelation[]>([]);
-  const [selected, setSelected] = useState("");
-  const [participantNotes, setParticipantNotes] = useState("");
   const [mode, setMode] = useState<"loading" | "live" | "insufficient" | "unavailable" | "error">("loading");
   const [guideOpen, setGuideOpen] = useState(true);
   const [earlyNotice, setEarlyNotice] = useState(false);
   const remaining = useCheckpointCountdown(testMode);
-
-  const selectCard = (id: string) => {
-    setSelected(id);
-    eventLog("checkpoint_card_selected", { id }, { stage: "checkpoint", targetType: "reasoning_card", targetId: id });
-  };
-  const updateStatus = (id: string, status: EpistemicStatus) => {
-    setCards((current) => current.map((card) => card.id === id ? { ...card, status } : card));
-    eventLog("checkpoint_card_status_changed", { status }, { stage: "checkpoint", targetType: "reasoning_card", targetId: id });
-  };
-  const togglePin = (id: string) => {
-    setCards((current) => current.map((card) => card.id === id
-      ? { ...card, priority: card.priority === "pinned" ? "normal" : "pinned" }
-      : card));
-    eventLog("checkpoint_card_pin_toggled", { id }, { stage: "checkpoint", targetType: "reasoning_card", targetId: id });
-  };
-  const updateContent = (id: string, value: string) => {
-    setCards((current) => current.map((card) => card.id === id
-      ? { ...card, content: { ...card.content, [locale]: value } }
-      : card));
-    eventLog("checkpoint_card_content_edited", { locale }, { stage: "checkpoint", targetType: "reasoning_card", targetId: id });
-  };
 
   useEffect(() => {
     const controller = new AbortController();
@@ -442,7 +204,6 @@ export function RmwCheckpoint({
             why: { "zh-CN": card.why, en: card.why },
           }));
           setCards(extracted);
-          setSelected(extracted[0]?.id || "");
           if (result.relations?.length) setRelations(result.relations);
           setMode("live");
           eventLog("checkpoint_extraction_completed", {
@@ -456,7 +217,6 @@ export function RmwCheckpoint({
         const skippedMode = result.mode === "insufficient" ? "insufficient" : "unavailable";
         setCards([]);
         setRelations([]);
-        setSelected("");
         setMode(skippedMode);
         eventLog("checkpoint_extraction_skipped", { taskId, reason: skippedMode }, { stage: "checkpoint" });
       } catch (error) {
@@ -469,14 +229,8 @@ export function RmwCheckpoint({
     return () => controller.abort();
   }, [locale, memo, messages, taskId]);
 
-  const main = cards.find((card) => card.goalLevel === "main");
-  const active = cards.filter((card) => card.goalLevel === "subgoal").slice(0, 4);
-  const suspended = cards.filter((card) => card.goalLevel === "suspended").slice(0, 3);
-  const rejected = cards.find((card) => card.kind === "path");
-  const selectedCard = cards.find((card) => card.id === selected) || cards[0];
-  const continuousSummary = problemStateToContinuousSummary(cards, locale);
-  const extractionReady = condition === "rmw_no_summary" || mode === "live";
-  const preparationReady = extractionReady && (condition !== "rmw_no_summary" || participantNotes.trim().length >= 30);
+  const extractionReady = mode === "live";
+  const preparationReady = extractionReady;
   const modeLabel = mode === "live" ? "DeepSeek" : mode === "loading"
     ? (locale === "zh-CN" ? "分析中" : "Analyzing")
     : mode === "insufficient"
@@ -495,8 +249,6 @@ export function RmwCheckpoint({
     ? (locale === "zh-CN" ? "正在等待提取结果" : "Waiting for extraction")
     : !extractionReady
       ? (testMode ? (locale === "zh-CN" ? "测试模式可跳过；正式实验不可继续" : "Test mode may skip; the formal study cannot continue") : (locale === "zh-CN" ? "未生成 Problem State，无法进入中断任务" : "No problem state was generated; interruption is blocked"))
-      : condition === "rmw_no_summary" && participantNotes.trim().length < 30
-        ? (locale === "zh-CN" ? "请写下至少 30 个字的中断前恢复笔记" : "Write at least 30 characters of pre-interruption recovery notes")
       : testMode
         ? (locale === "zh-CN" ? "测试模式：可直接继续" : "Test mode: continue anytime")
         : remaining > 0 ? t.waiting : (locale === "zh-CN" ? "可以进入中断任务" : "Interruption task is ready");
@@ -510,19 +262,10 @@ export function RmwCheckpoint({
       <header className="flex items-end justify-between py-6">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">{t.title}</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-            {condition === "rmw_no_summary"
-              ? (locale === "zh-CN" ? "请在同样的三分钟准备时间内独立撰写恢复笔记。系统不会用 AI 生成或改写这些笔记。" : "Use the same three-minute preparation period to write your own recovery notes. The system will not generate or rewrite them with AI.")
-              : condition === "summary_only"
-                ? (locale === "zh-CN" ? "请在同样的三分钟准备时间内阅读连续文本摘要。该摘要与 RMW 使用同一套提取内容。" : "Use the same three-minute preparation period to read a prose summary generated from the same extracted content as RMW.")
-                : t.subtitle}
-          </p>
-          {condition === "rmw" && mode === "live" && <p className="mt-2 max-w-3xl text-xs leading-5 text-primary">{t.calibrateHint}</p>}
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{t.subtitle}</p>
         </div>
         <div className="flex items-center gap-3">
-          <Badge variant={condition === "rmw_no_summary" ? "outline" : mode === "live" ? "default" : "secondary"}>
-            {condition === "rmw_no_summary" ? (locale === "zh-CN" ? "用户笔记基线" : "Self-Notes") : modeLabel}
-          </Badge>
+          <Badge variant={mode === "live" ? "default" : "secondary"}>{modeLabel}</Badge>
           <Button onClick={() => setGuideOpen(true)} variant="outline" className="h-9 gap-2 border-primary/30 bg-white font-medium text-primary hover:bg-primary/5">
             <Question size={16} />
             {locale === "zh-CN" ? "浮窗解释模式" : "Guided Tour Overlay"}
@@ -530,77 +273,13 @@ export function RmwCheckpoint({
         </div>
       </header>
 
-      {condition === "rmw_no_summary" ? <section data-tour="checkpoint-self-notes-baseline" className="rounded-2xl border bg-white px-8 py-10 shadow-[0_12px_40px_rgba(35,43,70,.05)]">
-        <div className="mx-auto grid size-14 place-items-center rounded-2xl bg-amber-50 text-amber-800">
-          <Brain size={30} className="text-amber-800" />
+      {mode === "live" ? <section data-tour="checkpoint-saved" className="rounded-2xl border bg-white px-8 py-16 text-center shadow-[0_12px_40px_rgba(35,43,70,.05)]">
+        <div className="mx-auto grid size-14 place-items-center rounded-2xl bg-emerald-50 text-emerald-700">
+          <Check size={28} />
         </div>
-        <Badge variant="secondary" className="mt-4">{locale === "zh-CN" ? "方式二 · 用户自主笔记基线" : "Method 2 · Self-Notes Baseline"}</Badge>
-        <h2 className="mt-4 text-center text-xl font-semibold">{locale === "zh-CN" ? "写下中断后需要看到的恢复笔记" : "Write the notes you want available after interruption"}</h2>
-        <p className="mx-auto mt-3 max-w-2xl text-center text-sm leading-7 text-muted-foreground">{locale === "zh-CN" ? "请写下一段你希望在中断后重新开始任务时看到的笔记。内容和组织方式由你自己决定。中断后系统会原样呈现这段笔记，不会由 AI 修改。" : "Write a note in whatever form and organization you like — this is what you want to see if you resume the task after the interruption. It will be shown to you verbatim after interruption; the system will not generate or rewrite it with AI."}</p>
-        <Textarea className="mx-auto mt-5 min-h-44 max-w-3xl text-sm leading-6" value={participantNotes} onChange={(event) => setParticipantNotes(event.target.value)} placeholder={locale === "zh-CN" ? "中断前恢复笔记（至少 30 字）……" : "Pre-interruption recovery notes (at least 30 characters)…"} />
-        <p className="mx-auto mt-2 max-w-3xl text-right font-mono text-[10px] text-muted-foreground">{participantNotes.trim().length} / 30+</p>
-      </section> : condition === "summary_only" ? <section data-tour="checkpoint-summary-baseline" className="rounded-2xl border bg-white px-8 py-10 shadow-[0_12px_40px_rgba(35,43,70,.05)]">
-        <div className="mx-auto grid size-14 place-items-center rounded-2xl bg-indigo-50 text-primary">
-          <Brain size={30} className={mode === "loading" ? "animate-pulse text-indigo-600" : "text-indigo-600"} />
-        </div>
-        <Badge variant="secondary" className="mt-4">{locale === "zh-CN" ? "方式三 · 纯 AI 恢复摘要基线" : "Method 3 · Pure AI Summary Baseline"}</Badge>
-        <h2 className="mt-4 text-center text-xl font-semibold">
-          {mode === "loading"
-            ? (locale === "zh-CN" ? "后台自动提取 Problem State 中……" : "Auto-extracting problem state in background…")
-            : mode === "live"
-              ? (locale === "zh-CN" ? "后台保存完成 · 准备进入中断任务" : "Background extraction complete · Ready for interruption")
-              : (locale === "zh-CN" ? "后台提取状态" : "Background extraction status")}
-        </h2>
-        <p className="mx-auto mt-3 max-w-2xl text-center text-sm leading-7 text-muted-foreground">
-          {mode === "loading"
-            ? emptyMessage
-            : mode === "live"
-              ? (locale === "zh-CN"
-                ? "以下摘要与 RMW 使用同一套 Problem State 信息，但以连续文本呈现，不显示认识状态、来源链接或校准操作。请在三分钟准备时间内阅读。"
-                : "The summary below uses the same underlying Problem State content as RMW, rendered as prose without epistemic-status labels, provenance links, or calibration controls.")
-              : emptyMessage}
-        </p>
-        {mode === "live" && <div className="mx-auto mt-5 max-h-[360px] max-w-4xl overflow-auto rounded-xl bg-muted/60 p-5"><p className="whitespace-pre-wrap text-sm leading-7">{continuousSummary}</p></div>}
-      </section> : mode === "live" ? <>
-      <section className="grid grid-cols-[1fr_1.25fr] gap-5">
-        <article data-tour="checkpoint-goals" className="rounded-2xl border bg-white p-5 shadow-[0_12px_40px_rgba(35,43,70,.05)]">
-          <div className="mb-3 flex items-center justify-between"><h2 className="font-semibold">{t.main}</h2><Badge variant="outline"><Target size={13} />1</Badge></div>
-          {main && <StateTile card={main} locale={locale} selected={selected === main.id} onSelect={() => selectCard(main.id)} />}
-          <div className="mt-4 grid grid-cols-[1.2fr_.8fr_.8fr] gap-3">
-            <div><p className="mb-2 text-[10px] font-semibold text-muted-foreground">{t.active} · {active.length}</p><div className="space-y-2">{active.map((card) => <StateTile key={card.id} card={card} locale={locale} selected={selected === card.id} onSelect={() => selectCard(card.id)} />)}</div></div>
-            <div><p className="mb-2 text-[10px] font-semibold text-muted-foreground">{t.suspended} · {suspended.length}</p><div className="space-y-2">{suspended.map((card) => <StateTile key={card.id} card={card} locale={locale} selected={selected === card.id} onSelect={() => selectCard(card.id)} />)}</div></div>
-            <div><p className="mb-2 text-[10px] font-semibold text-muted-foreground">{t.rejected}</p>{rejected && <StateTile card={rejected} locale={locale} selected={selected === rejected.id} onSelect={() => selectCard(rejected.id)} />}</div>
-          </div>
-        </article>
-
-        <article data-tour="checkpoint-state" className="rounded-2xl border bg-white p-5 shadow-[0_12px_40px_rgba(35,43,70,.05)]">
-          <div className="mb-4 flex items-center justify-between"><div><h2 className="font-semibold">{t.candidates}</h2><p className="mt-1 text-xs text-muted-foreground">{locale === "zh-CN" ? "由 DeepSeek 归纳；请校准后再保存。" : "Summarized by DeepSeek; calibrate before saving."}</p></div><Badge variant="secondary">{cards.length}</Badge></div>
-          <div className="grid min-h-[360px] grid-cols-[1.05fr_.95fr] gap-3">
-            <div className="grid max-h-[420px] grid-cols-1 gap-2 overflow-y-auto pr-1 content-start">
-              {cards.filter((card) => card.goalLevel !== "main").map((card) => (
-                <StateTile key={card.id} card={card} locale={locale} selected={selected === card.id} onSelect={() => selectCard(card.id)} />
-              ))}
-            </div>
-            <div data-tour="checkpoint-inspector">
-              {selectedCard && <CheckpointInspector
-                key={`${selectedCard.id}-${locale}`}
-                card={selectedCard}
-                locale={locale}
-                t={t}
-                updateStatus={updateStatus}
-                togglePin={togglePin}
-                updateContent={updateContent}
-              />}
-            </div>
-          </div>
-        </article>
-      </section>
-
-      <section data-tour="checkpoint-network" className="mt-5">
-        <div className="mb-3 flex items-center justify-between"><div><h2 className="flex items-center gap-2 font-semibold"><Graph size={20} className="text-primary" />{t.network}</h2><p className="mt-1 text-xs text-muted-foreground">{locale === "zh-CN" ? "点击节点可选中并校准对应卡片。" : "Click a node to select and calibrate the matching card."}</p></div><Badge variant="outline">{relations.length} relations</Badge></div>
-        <CheckpointNetwork cards={cards} relations={relations} locale={locale} selected={selectedCard?.id || ""} onSelect={selectCard} />
-      </section>
-      </> : <section data-tour="checkpoint-empty" className="rounded-2xl border bg-white px-8 py-16 text-center shadow-[0_12px_40px_rgba(35,43,70,.05)]">
+        <h2 className="mt-5 text-lg font-semibold">{locale === "zh-CN" ? "推理状态已保存" : "Reasoning state saved"}</h2>
+        <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">{locale === "zh-CN" ? "系统已在后台冻结并记录你当前的推理状态，用于后续研究分析；此过程不会向你展示任何摘要或卡片。" : "The system froze and recorded your current reasoning state in the background for later analysis. No summary or cards are shown here."}</p>
+      </section> : <section data-tour="checkpoint-empty" className="rounded-2xl border bg-white px-8 py-16 text-center shadow-[0_12px_40px_rgba(35,43,70,.05)]">
         <div className="mx-auto grid size-12 place-items-center rounded-xl bg-secondary text-primary">{mode === "loading" ? <Brain size={25} /> : <WarningCircle size={25} />}</div>
         <h2 className="mt-5 text-lg font-semibold">{locale === "zh-CN" ? "没有可显示的 Problem State" : "No problem state to display"}</h2>
         <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">{emptyMessage}</p>
@@ -624,9 +303,8 @@ export function RmwCheckpoint({
               eventLog("checkpoint_continue_blocked", { remaining }, { stage: "checkpoint" });
               return;
             }
-            eventLog("checkpoint_completed", { taskId, condition, cards, relations, participantNotesLength: participantNotes.trim().length, preparationSeconds: CHECKPOINT_DURATION_SECONDS }, { stage: "checkpoint" });
-            if (condition === "rmw_no_summary") onContinue(undefined, participantNotes.trim());
-            else onContinue({ cards, relations, capturedAt: new Date().toISOString() });
+            eventLog("checkpoint_completed", { taskId, condition, cards, relations, preparationSeconds: CHECKPOINT_DURATION_SECONDS }, { stage: "checkpoint" });
+            onContinue({ cards, relations, capturedAt: new Date().toISOString() });
           }}>{!preparationReady&&testMode?(locale === "zh-CN"?"仅测试模式：跳过保存":"Test mode only: skip save"):t.saveAndBreak}<ArrowRight /></Button>
         </div>
       </div>

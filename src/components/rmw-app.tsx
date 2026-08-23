@@ -3,16 +3,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight, BookOpenText, Brain, Check, CheckCircle, Clock,
-  Globe, Question, LinkSimple,
-  NotePencil, PaperPlaneTilt, PauseCircle, PushPin, Sparkle,
-  SquaresFour, Target, Timer, WarningCircle, XCircle,
+  Globe, Question,
+  NotePencil, PaperPlaneTilt, Sparkle,
+  SquaresFour, Target, Timer, WarningCircle,
 } from "@phosphor-icons/react";
-import { Background, Controls, Handle, Position, ReactFlow, type Edge, type Node } from "@xyflow/react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { beginStudySession, eventLog, getOrCreateParticipantId } from "@/lib/event-log";
 import {
   completeRemoteStudy,
@@ -20,7 +18,6 @@ import {
   startRemoteStudySession,
 } from "@/lib/remote-results";
 import {
-  problemStateToContinuousSummary,
   readProblemStateSnapshot,
   saveProblemStateSnapshot,
   toCardRelations,
@@ -32,7 +29,7 @@ import {
   isResearchTaskId,
   type ResearchTaskId,
 } from "@/lib/research-task";
-import type { CardRelation, Condition, EpistemicStatus, Locale, ProblemStateSnapshot, ReasoningCard } from "@/lib/rmw-types";
+import type { CardRelation, Condition, Locale, ProblemStateSnapshot, ReasoningCard } from "@/lib/rmw-types";
 import { InterruptionTask, RmwCheckpoint } from "@/components/rmw-checkpoint";
 import { RecoveryProbePage } from "@/components/recovery-probe";
 import { TimedButton } from "@/components/timed-button";
@@ -42,13 +39,13 @@ import {
   withRecoveryProbe,
   type RecoveryAssessment,
   type RecoveryPostSurvey,
-  type RecoveryReadiness,
 } from "@/lib/recovery-assessment";
 
-type Screen = "landing" | "brief" | "survey" | "work" | "city_t1" | "checkpoint" | "interruption" | "city_t2" | "city_support" | "city_t3" | "workspace" | "post_survey" | "complete";
+type Screen = "landing" | "brief" | "survey" | "work" | "city_t1" | "checkpoint" | "interruption" | "city_t2" | "workspace" | "post_survey" | "complete";
 type ChatMessage = { role: "user" | "assistant"; text: string };
+// Single-protocol characterization study: Work Period 15 min, Continuation (post-D6) 10 min.
 const WORK_PHASE_DURATION_SECONDS = 900;
-const RECOVERY_PHASE_DURATION_SECONDS = 300;
+const RECOVERY_PHASE_DURATION_SECONDS = 600;
 
 const copy = {
   "zh-CN": {
@@ -116,14 +113,12 @@ export function RmwApp() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const view = params.get("view");
-    const c = params.get("condition") as Condition | null;
     const task = params.get("task");
     const lang = params.get("lang") as Locale | null;
     const frame = requestAnimationFrame(() => {
       setParticipantId(getOrCreateParticipantId());
       setTestMode(params.get("test") === "1");
       if (lang === "en" || lang === "zh-CN") setLocale(lang);
-      if (c && ["rmw", "rmw_no_summary", "summary_only"].includes(c)) setCondition(c);
       if (isResearchTaskId(task)) {
         const selectedTask=getResearchTask(task);
         const selectedLocale=lang==="en"||lang==="zh-CN"?lang:"zh-CN";
@@ -139,8 +134,6 @@ export function RmwApp() {
       if (view === "work") setScreen("work");
       if (view === "city-t1") setScreen("city_t1");
       if (view === "city-t2") setScreen("city_t2");
-      if (view === "city-support") setScreen("city_support");
-      if (view === "city-t3") setScreen("city_t3");
     });
     return () => cancelAnimationFrame(frame);
   }, []);
@@ -160,16 +153,20 @@ export function RmwApp() {
         <div className="max-w-md"><SquaresFour size={42} className="mx-auto mb-5 text-primary" /><h1 className="text-2xl font-semibold">{t.desktop}</h1><p className="mt-3 text-muted-foreground">{t.desktopText}</p></div>
       </div>
       <main className="desktop-app min-h-screen">
-        {screen === "landing" && <Landing locale={locale} setLocale={setLocale} participantId={participantId} startError={startError} onStart={async (chosenCondition) => {
+        {screen === "landing" && <Landing locale={locale} setLocale={setLocale} participantId={participantId} startError={startError} onStart={async () => {
           if (startingRef.current) return;
           startingRef.current = true;
           setStartError("");
           try {
             const sessionId = beginStudySession();
-            const requestedCondition = testMode ? condition : chosenCondition;
+            // Single-protocol characterization study: every participant runs the
+            // same condition and the same task. assignmentMode still distinguishes
+            // a formal run ("manual_condition") from researcher review ("manual",
+            // auto-excluded from analysis) but no longer selects among conditions.
+            const requestedCondition: Condition = condition;
             const assignmentMode = testMode ? "manual" : "manual_condition";
             const assignment = await startRemoteStudySession({ sessionId, participantCode: participantId, locale, condition: requestedCondition, taskId, assignmentMode });
-            if (!assignment || !isResearchTaskId(assignment.taskId) || !["rmw", "rmw_no_summary", "summary_only"].includes(assignment.condition)) {
+            if (!assignment || !isResearchTaskId(assignment.taskId) || assignment.condition !== "rmw") {
               setStartError(locale === "zh-CN" ? "无法创建本次运行，请检查网络后重试。" : "Could not create this study run. Check your connection and try again.");
               return;
             }
@@ -205,11 +202,9 @@ export function RmwApp() {
           eventLog("recovery_probe_submitted", recoveryAssessmentEventPayload("t1", probe), { stage: "pre_interruption_assessment", targetType: "recall_probe", targetId: `${taskId}_t1` });
           setScreen("checkpoint");
         }} />}
-        {screen === "checkpoint" && <RmwCheckpoint locale={locale} condition={condition} taskId={taskId} memo={memo} messages={chat} testMode={testMode} onBack={() => setScreen("work")} onContinue={(snapshot, participantNotes) => {
+        {screen === "checkpoint" && <RmwCheckpoint locale={locale} condition={condition} taskId={taskId} memo={memo} messages={chat} testMode={testMode} onBack={() => setScreen("work")} onContinue={(snapshot) => {
           if (snapshot) { setProblemState(snapshot); saveProblemStateSnapshot(snapshot); }
-          const next = participantNotes === undefined ? recoveryAssessment : { ...recoveryAssessment, participantNotes };
-          setRecoveryAssessment(next);
-          saveRemoteStudySnapshot({ memo, chat, ...(snapshot && { problemState: snapshot }), taskAssessment: next });
+          saveRemoteStudySnapshot({ memo, chat, ...(snapshot && { problemState: snapshot }), taskAssessment: recoveryAssessment });
           setScreen("interruption");
         }} />}
         {screen === "interruption" && <InterruptionTask locale={locale} fastMode={testMode} onComplete={() => setScreen("city_t2")} />}
@@ -218,24 +213,12 @@ export function RmwApp() {
           setRecoveryAssessment(next);
           saveRemoteStudySnapshot({ taskAssessment: next, recall: probe.reasoning });
           eventLog("recovery_probe_submitted", recoveryAssessmentEventPayload("t2", probe), { stage: "unsupported_recovery_assessment", targetType: "recall_probe", targetId: `${taskId}_t2` });
-          eventLog("recovery_support_revealed", { condition, taskId, purpose: "supported_t3" }, { stage: "recovery_assessment" });
-          setScreen("city_support");
-        }} />}
-        {screen === "city_support" && <RecoverySupportPage locale={locale} condition={condition} taskId={taskId} problemState={problemState} participantNotes={recoveryAssessment.participantNotes || ""} testMode={testMode} onContinue={(readiness) => {
-          const next = { ...recoveryAssessment, readiness };
-          setRecoveryAssessment(next);
-          saveRemoteStudySnapshot({ taskAssessment: next });
-          setScreen("city_t3");
-        }} />}
-        {screen === "city_t3" && <RecoveryProbePage locale={locale} stage="t3" onSubmit={(probe) => {
-          const next = withRecoveryProbe(recoveryAssessment, "t3", probe);
-          setRecoveryAssessment(next);
-          saveRemoteStudySnapshot({ taskAssessment: next });
-          eventLog("recovery_probe_submitted", recoveryAssessmentEventPayload("t3", probe), { stage: "supported_recovery_assessment", targetType: "recall_probe", targetId: `${taskId}_t3` });
-          eventLog("recovery_new_evidence_unlocked", { taskId, afterProbe: "t3" }, { stage: "recovery", targetType: "material", targetId: getResearchTask(taskId).recoveryMaterial.id });
+          // Single-protocol design: no recovery support is ever shown. T2 is
+          // followed directly by the D6 continuation phase.
+          eventLog("recovery_new_evidence_unlocked", { taskId, afterProbe: "t2" }, { stage: "recovery", targetType: "material", targetId: getResearchTask(taskId).recoveryMaterial.id });
           setScreen("workspace");
         }} />}
-        {screen === "workspace" && <Workspace key={`recovery-${taskId}-${locale}`} locale={locale} condition={condition} taskId={taskId} phase="recovery" problemState={problemState} participantNotes={recoveryAssessment.participantNotes || ""} memo={memo} setMemo={setMemo} chat={chat} setChat={setChat} setScreen={setScreen} testMode={testMode} t={t} />}
+        {screen === "workspace" && <Workspace key={`recovery-${taskId}-${locale}`} locale={locale} condition={condition} taskId={taskId} phase="recovery" problemState={problemState} memo={memo} setMemo={setMemo} chat={chat} setChat={setChat} setScreen={setScreen} testMode={testMode} t={t} />}
         {screen === "post_survey" && <RecoveryPostSurveyPage locale={locale} onSubmit={(postSurvey) => {
           const next = { ...recoveryAssessment, postSurvey };
           setRecoveryAssessment(next);
@@ -267,11 +250,10 @@ function Landing({
   setLocale: (l: Locale) => void;
   participantId: string;
   startError: string;
-  onStart: (condition: Condition) => Promise<void>;
+  onStart: () => Promise<void>;
   t: typeof copy[Locale];
 }) {
   const [consent, setConsent] = useState(false);
-  const [conditionChoice, setConditionChoice] = useState<Condition | null>(null);
   const [submitting, setSubmitting] = useState(false);
   return <div className="min-h-screen bg-[#f8f7f3]">
     <header className="mx-auto flex h-20 max-w-6xl items-center justify-between px-8"><Brand /><LanguageChoice locale={locale} setLocale={setLocale} /></header>
@@ -281,22 +263,9 @@ function Landing({
         <label className="text-sm font-semibold" htmlFor="anonymous-id">{t.anonymous}</label>
         <div id="anonymous-id" className="mt-3 rounded-xl border bg-muted/35 px-4 py-3 font-mono text-base font-semibold tracking-wider text-primary">{participantId || (locale==="zh-CN"?"正在生成…":"Generating…")}</div>
         <p className="mt-2 text-xs text-muted-foreground">{locale==="zh-CN"?"编号由系统自动生成，无需填写。":"Generated automatically; no entry is required."}</p>
-        <fieldset className="mt-7">
-          <legend className="text-sm font-semibold">{locale==="zh-CN"?"选择实验方式":"Choose a condition"}</legend>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">{locale==="zh-CN"?"研究任务由系统随机分配；这里选定的实验方式会直接生效。":"The research task is still assigned randomly; the condition you pick here is used as-is."}</p>
-          <div className="mt-3 grid gap-2">
-            {([
-              {value:"rmw",zh:"方式一",en:"Method 1"},
-              {value:"rmw_no_summary",zh:"方式二",en:"Method 2"},
-              {value:"summary_only",zh:"方式三",en:"Method 3"},
-            ] as const).map(option=><label key={option.value} className={`cursor-pointer rounded-xl border px-3 py-3 text-sm transition ${conditionChoice===option.value?"border-primary bg-secondary/65 text-primary":"bg-white hover:border-primary/45"}`}>
-              <input type="radio" name="condition" value={option.value} checked={conditionChoice===option.value} onChange={()=>setConditionChoice(option.value)} className="mr-2 accent-[var(--primary)]"/>
-              {locale==="zh-CN"?option.zh:option.en}
-            </label>)}
-          </div>
-        </fieldset>
+        <p className="mt-5 text-xs leading-5 text-muted-foreground">{locale==="zh-CN"?"本研究为单一流程：所有参与者完成相同的任务、相同的中断，且中断后不会获得任何恢复支持。":"This study runs a single protocol: every participant completes the same task and the same interruption, and receives no recovery support afterward."}</p>
         <label className="mt-7 flex cursor-pointer items-start gap-3 text-sm leading-6"><input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)} className="mt-1 size-4 accent-[var(--primary)]"/><span>{t.consent}</span></label>
-        <TimedButton seconds={5} ready={consent&&Boolean(participantId)&&Boolean(conditionChoice)&&!submitting} locale={locale} label={t.enter} blockedLabel={submitting?(locale==="zh-CN"?"正在创建本次运行…":"Setting up your session…"):!conditionChoice?(locale==="zh-CN"?"请先选择实验方式":"Choose a condition first"):(locale==="zh-CN"?"请勾选同意":"Provide consent to continue")} onClick={()=>{if(!conditionChoice||submitting)return;setSubmitting(true);onStart(conditionChoice).finally(()=>setSubmitting(false));}} className="mt-7 h-12 w-full" />
+        <TimedButton seconds={5} ready={consent&&Boolean(participantId)&&!submitting} locale={locale} label={t.enter} blockedLabel={submitting?(locale==="zh-CN"?"正在创建本次运行…":"Setting up your session…"):(locale==="zh-CN"?"请勾选同意":"Provide consent to continue")} onClick={()=>{if(submitting)return;setSubmitting(true);onStart().finally(()=>setSubmitting(false));}} className="mt-7 h-12 w-full" />
         {startError && <p role="alert" className="mt-3 text-center text-xs text-destructive">{startError}</p>}
         <p className="mt-3 text-center text-[11px] text-muted-foreground">{locale==="zh-CN"?"按钮将在阅读时间结束且信息完整后开放。":"The button unlocks after the reading time and required fields are complete."}</p>
       </div>
@@ -524,130 +493,19 @@ function CenteredShell({step,title,children}:{step?:string;title:string;children
 
 function Brand(){return <div className="flex items-center gap-3"><div className="grid size-10 place-items-center rounded-xl bg-primary text-white"><Brain size={23} weight="duotone"/></div><div><div className="font-semibold tracking-tight">RMW</div><div className="text-[10px] uppercase tracking-[.16em] text-muted-foreground">Reasoning Memory</div></div></div>}
 
-function RecoverySupportPage({ locale, condition, taskId, problemState, participantNotes, testMode, onContinue }: { locale: Locale; condition: Condition; taskId: ResearchTaskId; problemState: ProblemStateSnapshot | null; participantNotes: string; testMode: boolean; onContinue: (readiness: RecoveryReadiness) => void }) {
-  const cards = useMemo(() => problemState ? toReasoningCards(problemState, locale) : [], [locale, problemState]);
-  const relations = useMemo(() => problemState ? toCardRelations(problemState) : [], [problemState]);
-  const [activeTab, setActiveTab] = useState<"brief" | "cards" | "network">(() => condition === "rmw_no_summary" ? "cards" : "brief");
-  const [selected, setSelected] = useState(() => cards[0]?.id || "");
-  const renderedRef = useRef(false);
-  const [renderedAt] = useState(() => { const value = new Date(); return { iso: value.toISOString(), milliseconds: value.getTime() }; });
-  useEffect(() => {
-    if (renderedRef.current) return;
-    renderedRef.current = true;
-    eventLog("recovery_assessment_support_rendered", { condition, taskId, cardCount: cards.length, relationCount: relations.length }, { stage: "recovery_assessment", targetType: "recovery_support", targetId: condition });
-  }, [cards.length, condition, relations.length, taskId]);
-  const summary = problemStateToContinuousSummary(problemState?.cards || [], locale);
-  const viewedRef = useRef(new Set<string>([condition === "summary_only" ? "summary" : condition === "rmw_no_summary" ? "notes" : "brief"]));
-  useEffect(() => {
-    if (viewedRef.current.has(activeTab)) return;
-    viewedRef.current.add(activeTab);
-    eventLog("recovery_assessment_tab_viewed", { tab: activeTab }, { stage: "recovery_assessment", targetType: "recovery_tab", targetId: activeTab });
-  }, [activeTab]);
-
-  return <main className="flex min-h-screen flex-col bg-[#f7f6f2] p-6">
-    <div className="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col overflow-hidden rounded-2xl border bg-white shadow-[0_18px_60px_rgba(35,40,65,.08)]">
-      <header className="flex items-start justify-between gap-4 border-b px-6 py-5"><div><p className="font-mono text-[10px] uppercase tracking-[.16em] text-primary">{locale === "zh-CN" ? "恢复支持 · 新证据尚未开放" : "Recovery support · New evidence remains hidden"}</p><h1 className="mt-2 text-xl font-semibold">{locale === "zh-CN" ? "请恢复中断前的推理位置" : "Recover the pre-interruption reasoning position"}</h1><p className="mt-1 text-xs leading-5 text-muted-foreground">{locale === "zh-CN" ? "当你认为已经恢复到可以继续推理的程度时点击下方按钮。系统会记录实际用时；此页面不会展示新增证据。" : "Click the button when you feel ready to continue reasoning. Actual readiness time is recorded; no new evidence is shown here."}</p></div><Brain size={30} className="text-primary" /></header>
-      {!cards.length && condition === "rmw" ? <div className="m-6 flex-1 rounded-xl border bg-muted/30 p-5 text-sm text-muted-foreground">{locale === "zh-CN" ? "本次运行没有可用的恢复状态。请记录该运行用于数据质量审核。" : "No recovery state is available for this run. Flag it for data-quality review."}</div> : condition === "rmw_no_summary" ? <div className="m-6 flex-1 overflow-auto rounded-xl border bg-amber-50/50 p-6"><p className="text-xs font-semibold uppercase tracking-wider text-amber-900">{locale === "zh-CN" ? "你在中断前写下的笔记" : "Your pre-interruption notes"}</p><p className="mt-4 whitespace-pre-wrap text-sm leading-7">{participantNotes || (locale === "zh-CN" ? "未保存用户笔记；本次运行应标记为数据不完整。" : "No user notes were saved; flag this run as incomplete data.")}</p></div> : condition === "summary_only" ? <div className="m-6 flex-1 overflow-auto rounded-xl bg-muted/60 p-6"><p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">AI Summary</p><p className="mt-4 max-w-3xl whitespace-pre-wrap text-sm leading-8">{summary}</p></div> : <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "brief" | "cards" | "network")} className="flex min-h-0 flex-1 flex-col">
-        <div className="border-b px-6 py-3"><TabsList>{condition === "rmw" && <TabsTrigger value="brief">{locale === "zh-CN" ? "恢复摘要" : "Resume brief"}</TabsTrigger>}<TabsTrigger value="cards">{locale === "zh-CN" ? "推理卡片" : "Reasoning cards"}</TabsTrigger><TabsTrigger value="network">{locale === "zh-CN" ? "知识网络" : "Knowledge network"}</TabsTrigger></TabsList></div>
-        {condition === "rmw" && <TabsContent value="brief" className="m-0 min-h-0 flex-1 overflow-auto"><ResumeBrief locale={locale} cards={cards} t={copy[locale]} /></TabsContent>}
-        <TabsContent value="cards" className="m-0 min-h-0 flex-1 overflow-auto p-5"><div className="mx-auto max-w-3xl"><GoalHierarchy cards={cards} locale={locale} selected={selected} setSelected={setSelected} /><div className="mt-4 space-y-2">{cards.filter((card) => card.cardType !== "goal").map((card) => <button type="button" key={card.id} onClick={() => { setSelected(card.id); eventLog("recovery_assessment_card_viewed", { cardId: card.id, cardType: card.cardType }, { stage: "recovery_assessment", targetType: "reasoning_card", targetId: card.id }); }} className={`w-full rounded-lg border p-3 text-left transition ${selected === card.id ? "border-indigo-300 bg-indigo-50/55 ring-2 ring-indigo-100" : "bg-white hover:bg-muted/30"}`}><div className="flex items-center gap-2"><Badge variant="outline" className="text-[9px]">{card.cardType}</Badge><Badge variant="secondary" className="text-[9px]">{card.status}</Badge></div><p className="mt-2 text-sm font-medium leading-5">{card.content[locale]}</p><p className="mt-1 text-[11px] leading-5 text-muted-foreground">{card.detail[locale]}</p>{card.sourceRefs.length > 0 && <p className="mt-2 text-[10px] text-primary">{locale === "zh-CN" ? "来源" : "Source"}：{card.sourceRefs.map((source) => source.label).join(" · ")}</p>}</button>)}</div></div></TabsContent>
-        <TabsContent value="network" className="m-0 min-h-0 flex-1"><KnowledgeNetwork locale={locale} cards={cards} relations={relations} selected={selected} setSelected={setSelected} /></TabsContent>
-      </Tabs>}
-      <div className="shrink-0 border-t bg-white px-6 py-4"><TimedButton seconds={testMode ? 1 : 5} ready={condition === "rmw_no_summary" ? Boolean(participantNotes.trim()) : condition === "summary_only" ? Boolean(summary.trim()) : cards.length > 0} locale={locale} label={locale === "zh-CN" ? "我已恢复，可以开始支持后测评" : "I am ready for the supported assessment"} blockedLabel={locale === "zh-CN" ? "本次运行缺少对应恢复材料" : "Assigned recovery material is missing"} className="h-11 w-full" onClick={() => {
-        const readyAt = new Date().toISOString();
-        const readiness = { supportRenderedAt: renderedAt.iso, readyAt, latencyMs: Date.now() - renderedAt.milliseconds, viewedSections: [...viewedRef.current] };
-        eventLog("recovery_ready", { condition, taskId, latencyMs: readiness.latencyMs, viewedSections: readiness.viewedSections }, { stage: "recovery_assessment", targetType: "recovery_support", targetId: condition });
-        onContinue(readiness);
-      }} /></div>
-    </div>
-  </main>;
-}
-
-function RecoveryAcceptFloat({
-  locale,
-  cards,
-  t,
-  onAccept,
-}: {
-  locale: Locale;
-  cards: ReasoningCard[];
-  t: typeof copy[Locale];
-  onAccept: (values: { currentGoal: string; position: string; uncertain: string }) => void;
-}) {
-  const main = cards.find((card) => card.goalLevel === "main");
-  const positionSeed = cards
-    .filter((card) => card.goalLevel === "subgoal" && card.status !== "expired")
-    .slice(0, 2)
-    .map((card) => card.content[locale])
-    .join(locale === "zh-CN" ? "；" : "; ");
-  const uncertain = cards.find((card) => card.status === "uncertain")
-    || cards.find((card) => card.id === "uncertain");
-  const fields = [
-    { key: "currentGoal", label: t.currentGoal, hint: t.currentGoalHint, seed: main?.content[locale] || "" },
-    { key: "position", label: t.position, hint: t.positionHint, seed: positionSeed },
-    { key: "uncertain", label: t.uncertain, hint: t.uncertainHint, seed: uncertain?.content[locale] || "" },
-  ] as const;
-  const [responses, setResponses] = useState(() => fields.map((field) => field.seed));
-  const complete = responses.every((response) => response.trim());
-  return <div className="fixed inset-0 z-[60] grid place-items-center bg-slate-950/45 p-6 backdrop-blur-[2px]" role="dialog" aria-modal="true" aria-labelledby="recovery-accept-title">
-    <div className="w-full max-w-xl rounded-2xl border bg-white p-7 shadow-[0_28px_90px_rgba(10,18,44,.28)]">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="font-mono text-[10px] uppercase tracking-[.16em] text-muted-foreground">{locale === "zh-CN" ? "恢复阶段 · 接受" : "Recovery · Accept"}</p>
-          <h1 id="recovery-accept-title" className="mt-2 text-2xl font-semibold tracking-tight">{t.recoveryAcceptTitle}</h1>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">{t.recoveryAcceptSub}</p>
-        </div>
-        <Brand />
-      </div>
-      <div className="mt-6 space-y-4">
-        {fields.map((field, index) => (
-          <label key={field.key} className="block">
-            <span className="mb-1 block text-sm font-medium">{index + 1}. {field.label}</span>
-            <span className="mb-2 block text-xs leading-5 text-muted-foreground">{field.hint}</span>
-            <Textarea
-              rows={2}
-              placeholder="…"
-              value={responses[index]}
-              onChange={(event) => setResponses((current) => current.map((value, i) => i === index ? event.target.value : value))}
-            />
-          </label>
-        ))}
-      </div>
-      <TimedButton
-        seconds={5}
-        ready={complete}
-        locale={locale}
-        label={t.recoveryAcceptAction}
-        blockedLabel={t.recoveryAcceptBlocked}
-        className="mt-7 h-12 w-full"
-        onClick={() => onAccept({
-          currentGoal: responses[0].trim(),
-          position: responses[1].trim(),
-          uncertain: responses[2].trim(),
-        })}
-      />
-    </div>
-  </div>;
-}
-
-function WorkspaceTour({locale,condition,onComplete}:{locale:Locale;condition:Condition;onComplete:()=>void}) {
+function WorkspaceTour({locale,onComplete}:{locale:Locale;onComplete:()=>void}) {
   const zhSteps:{target:string;title:string;body:string}[]=[
     {target:"materials",title:"先阅读实验材料",body:"这里是当前任务的证据与约束材料。点击不同材料查看全文，系统会记录阅读进度。"},
     {target:"memo",title:"在工作区记录思考",body:"中间的工作区用于写下候选框架、假设、不确定点和排除方向。内容会持续保存；拖动两侧的竖向分隔条可调整各列宽度。"},
     {target:"goals",title:"检查右上角目标",body:"右上角用于逐项核对第一阶段目标。目标内容可独立上下滚动。"},
+    {target:"chat",title:"与 AI 比较问题框架",body:"请要求 AI 引用材料编号，并区分证据、推断和仍需验证的假设。"},
   ];
   const enSteps:{target:string;title:string;body:string}[]=[
     {target:"materials",title:"Read the evidence first",body:"These sources describe the current task evidence and constraints. Open each one to read it; reading progress is recorded."},
     {target:"memo",title:"Record reasoning in the workspace",body:"Use the central workspace for candidate framings, hypotheses, uncertainties, and rejected directions. Its content is continuously saved; drag either vertical divider to resize the columns."},
     {target:"goals",title:"Check the upper-right goals",body:"Use the upper-right window to check Phase 1 requirements. Its content scrolls independently."},
+    {target:"chat",title:"Compare framings with AI",body:"Ask the AI to cite source IDs and distinguish evidence, inference, and unverified assumptions."},
   ];
-  if(condition==="rmw_no_summary"){
-    zhSteps.push({target:"chat",title:"本条件不提供 AI 助手",body:"你被分配到用户自主笔记条件：全程不能使用 AI 对话，请完全依靠自己在工作区中的记录来推进和恢复思路。"});
-    enSteps.push({target:"chat",title:"No AI assistant in this condition",body:"You were assigned to the Self-Notes condition: no AI chat is available at any point. Rely entirely on your own notes in the workspace to reason and to resume later."});
-  }else{
-    zhSteps.push({target:"chat",title:"与 AI 比较问题框架",body:"三种恢复方式在第一阶段使用相同的 AI、材料和工作区。请要求 AI 引用材料编号，并区分证据、推断和仍需验证的假设。"});
-    enSteps.push({target:"chat",title:"Compare framings with AI",body:"Every condition uses the same AI, materials, and workspace in Phase 1. Ask the AI to cite source IDs and distinguish evidence, inference, and unverified assumptions."});
-  }
   const steps=locale==="zh-CN"?zhSteps:enSteps;
   const [index,setIndex]=useState(0);
   const [rect,setRect]=useState<DOMRect|null>(null);
@@ -689,7 +547,6 @@ function Workspace({
   taskId,
   phase,
   problemState,
-  participantNotes = "",
   memo,
   setMemo,
   chat,
@@ -704,7 +561,6 @@ function Workspace({
   taskId: ResearchTaskId;
   phase: "work" | "recovery";
   problemState: ProblemStateSnapshot | null;
-  participantNotes?: string;
   memo: string;
   setMemo: (memo: string) => void;
   chat: ChatMessage[];
@@ -715,16 +571,13 @@ function Workspace({
   t: typeof copy[Locale];
 }) {
   const task=getResearchTask(taskId);
-  const chatDisabled=condition==="rmw_no_summary";
   const phaseDurationSeconds=phase==="work"?WORK_PHASE_DURATION_SECONDS:RECOVERY_PHASE_DURATION_SECONDS;
-  const [cards,setCards]=useState<ReasoningCard[]>(()=>phase==="recovery"&&problemState?toReasoningCards(problemState,locale):[]);
+  const [cards]=useState<ReasoningCard[]>(()=>phase==="recovery"&&problemState?toReasoningCards(problemState,locale):[]);
   const recoveryRelations=useMemo<CardRelation[]>(()=>problemState?toCardRelations(problemState):[],[problemState]);
-  const [selected,setSelected]=useState("uncertain");
   const [message,setMessage]=useState("");
   const [isLoading,setIsLoading]=useState(false);
   const [chatError,setChatError]=useState<string|null>(null);
   const [showTour,setShowTour]=useState(phase==="work");
-  const [showRecoveryAccept,setShowRecoveryAccept]=useState(false);
   const [rightTopRatio,setRightTopRatio]=useState(48);
   const rightColumnRef=useRef<HTMLElement|null>(null);
   const workspaceGridRef=useRef<HTMLDivElement|null>(null);
@@ -794,35 +647,9 @@ function Workspace({
     const next=((clientY-bounds.top)/bounds.height)*100;
     setRightTopRatio(Math.min(66,Math.max(34,next)));
   };
-  const updateStatus=(id:string,status:EpistemicStatus)=>{setCards(cs=>cs.map(c=>c.id===id?{...c,status,revision:c.revision+1}:c));eventLog("card_status_changed",{status},{stage:"recovery",targetType:"reasoning_card",targetId:id})};
-  const togglePin=(id:string)=>{setCards(cs=>cs.map(c=>c.id===id?{...c,priority:c.priority==="pinned"?"normal":"pinned",revision:c.revision+1}:c));eventLog("card_pin_toggled",{id},{stage:"recovery",targetType:"reasoning_card",targetId:id})};
-  const updateContent=(id:string,value:string)=>{setCards(cs=>cs.map(c=>c.id===id?{...c,content:{...c.content,[locale]:value},revision:c.revision+1}:c));eventLog("card_content_edited",{locale},{stage:"recovery",targetType:"reasoning_card",targetId:id})};
-  const acceptRecoveryFloat=(values:{currentGoal:string;position:string;uncertain:string})=>{
-    const main=cards.find(card=>card.goalLevel==="main");
-    const uncertainCard=cards.find(card=>card.status==="uncertain")||cards.find(card=>card.id==="uncertain");
-    setCards(current=>current.map(card=>{
-      if(main&&card.id===main.id){
-        return {...card,content:{...card.content,[locale]:values.currentGoal},status:"active",priority:"pinned",revision:card.revision+1};
-      }
-      if(uncertainCard&&card.id===uncertainCard.id){
-        return {...card,content:{...card.content,[locale]:values.uncertain},status:"uncertain",revision:card.revision+1};
-      }
-      return card;
-    }));
-    eventLog("recovery_accept_float_submitted",{
-      locale,
-      responses:values,
-      writtenBack:{
-        mainGoalId:main?.id||null,
-        uncertainCardId:uncertainCard?.id||null,
-        positionLoggedOnly:true,
-      },
-    },{stage:"recovery"});
-    setShowRecoveryAccept(false);
-  };
   const send=async()=>{
     const userText=message.trim();
-    if(!userText||isLoading||chatDisabled)return;
+    if(!userText||isLoading)return;
     const history:ChatMessage[]=[...chat,{role:"user",text:userText}];
     setChat(history);
     setMessage("");
@@ -894,7 +721,7 @@ function Workspace({
       <section ref={rightColumnRef} className="grid min-h-0 min-w-0 overflow-hidden bg-white" style={{gridTemplateRows:`${rightTopRatio}fr 10px ${100-rightTopRatio}fr`}}>
         {phase==="work"
           ?<PhaseOnePanel locale={locale} condition={condition} taskId={taskId} memo={memo} remaining={remainingSeconds} testMode={testMode} onPhaseOneCapture={onPhaseOneCapture} setScreen={setScreen}/>
-          :<RecoveryPanel locale={locale} condition={condition} participantNotes={participantNotes} supportSummary={problemStateToContinuousSummary(problemState?.cards || [], locale)} cards={cards} relations={recoveryRelations} selected={selected} setSelected={setSelected} updateStatus={updateStatus} togglePin={togglePin} updateContent={updateContent} remaining={remainingSeconds} testMode={testMode} setScreen={setScreen} t={t}/>}
+          :<ContinuationPanel locale={locale} taskId={taskId} remaining={remainingSeconds} testMode={testMode} setScreen={setScreen} t={t}/>}
         <button
           type="button"
           aria-label={locale==="zh-CN"?"上下拖动，调整目标与 AI 助手窗口高度":"Drag vertically to resize the goals and AI-assistant windows"}
@@ -911,11 +738,10 @@ function Workspace({
         >
           <span className="h-1 w-12 rounded-full bg-border transition group-hover:bg-primary/45"/>
         </button>
-        <ChatPanel locale={locale} chat={chat} message={message} setMessage={setMessage} send={send} isLoading={isLoading} error={chatError} disabled={chatDisabled} t={t}/>
+        <ChatPanel locale={locale} chat={chat} message={message} setMessage={setMessage} send={send} isLoading={isLoading} error={chatError} t={t}/>
       </section>
     </div>
-    {showTour&&<WorkspaceTour locale={locale} condition={condition} onComplete={()=>setShowTour(false)}/>}
-    {showRecoveryAccept&&<RecoveryAcceptFloat locale={locale} cards={cards} t={t} onAccept={acceptRecoveryFloat}/>}
+    {showTour&&<WorkspaceTour locale={locale} onComplete={()=>setShowTour(false)}/>}
   </div>
 }
 
@@ -1022,104 +848,23 @@ function PhaseOnePanel({locale,condition,taskId,memo,remaining,testMode,onPhaseO
   </section>;
 }
 
-function RecoveryPanel({locale,condition,participantNotes,supportSummary,cards,relations,selected,setSelected,updateStatus,togglePin,updateContent,remaining,testMode,setScreen,t}:{locale:Locale;condition:Condition;participantNotes:string;supportSummary:string;cards:ReasoningCard[];relations:CardRelation[];selected:string;setSelected:(s:string)=>void;updateStatus:(id:string,s:EpistemicStatus)=>void;togglePin:(id:string)=>void;updateContent:(id:string,value:string)=>void;remaining:number;testMode:boolean;setScreen:(s:Screen)=>void;t:typeof copy[Locale]}) {
-  const [activeTab,setActiveTab]=useState<"brief"|"cards"|"network">(()=>condition==="rmw_no_summary"?"cards":"brief");
-  const renderedRef=useRef(false);
-  const viewedTabsRef=useRef(new Set<string>());
-  useEffect(()=>{
-    if(renderedRef.current)return;
-    renderedRef.current=true;
-    eventLog("recovery_support_rendered",{
-      condition,
-      supportType:condition,
-      cardCount:cards.length,
-      cardIds:cards.map(card=>card.id),
-      relationCount:relations.length,
-    },{stage:"recovery",targetType:"recovery_support",targetId:condition});
-  },[cards,condition,relations.length]);
-  useEffect(()=>{
-    if(condition==="summary_only"||!cards.length||viewedTabsRef.current.has(activeTab))return;
-    viewedTabsRef.current.add(activeTab);
-    eventLog("recovery_tab_viewed",{tab:activeTab,cardCount:cards.length},{stage:"recovery",targetType:"recovery_tab",targetId:activeTab});
-  },[activeTab,cards.length,condition]);
-  if(condition==="rmw_no_summary") return <RecoveryShell t={t}><div className="mx-6 mt-4 min-h-0 flex-1 overflow-auto rounded-xl bg-amber-50/60 p-5"><p className="text-xs font-semibold uppercase tracking-wider text-amber-900">{locale==="zh-CN"?"中断前用户笔记":"Pre-interruption self-notes"}</p><p className="mt-3 whitespace-pre-wrap text-sm leading-7">{participantNotes|| (locale==="zh-CN"?"未保存用户笔记":"No user notes were saved")}</p></div><PrimaryContinue locale={locale} remaining={remaining} testMode={testMode} setScreen={setScreen} t={t}/></RecoveryShell>;
-  if(!cards.length && condition==="rmw")return <RecoveryShell t={t}><div className="m-6 rounded-xl border bg-white p-5 text-sm leading-6 text-muted-foreground">{locale==="zh-CN"?"本次没有保存经过参与者校准的 Problem State，因此不会显示演示卡片。":"No participant-calibrated problem state was saved, so no demo cards are shown."}</div><PrimaryContinue locale={locale} remaining={remaining} testMode={testMode} setScreen={setScreen} t={t}/></RecoveryShell>;
-  if(condition==="summary_only") return <RecoveryShell t={t}><div className="mx-6 mt-4 min-h-0 flex-1 overflow-auto rounded-xl bg-muted/60 p-5"><p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">AI Summary</p><p className="mt-3 whitespace-pre-wrap text-sm leading-7">{supportSummary}</p></div><PrimaryContinue locale={locale} remaining={remaining} testMode={testMode} setScreen={setScreen} t={t}/></RecoveryShell>;
-  return <RecoveryShell t={t}><Tabs value={activeTab} onValueChange={(value)=>setActiveTab(value as "brief"|"cards"|"network")} className="flex min-h-0 flex-1 flex-col"><div className="flex items-center justify-between border-b px-5 py-2.5"><TabsList className="inline-flex h-9 items-center justify-center rounded-lg bg-secondary/80 p-1 text-muted-foreground">{condition==="rmw"&&<TabsTrigger className="inline-flex h-7 items-center justify-center rounded-md px-3.5 text-xs font-medium transition-all data-active:bg-white data-active:text-foreground data-active:shadow-sm" value="brief">{t.resume}</TabsTrigger>}<TabsTrigger className="inline-flex h-7 items-center justify-center rounded-md px-3.5 text-xs font-medium transition-all data-active:bg-white data-active:text-foreground data-active:shadow-sm" value="cards">{t.cards}</TabsTrigger><TabsTrigger className="inline-flex h-7 items-center justify-center rounded-md px-3.5 text-xs font-medium transition-all data-active:bg-white data-active:text-foreground data-active:shadow-sm" value="network">{t.network}</TabsTrigger></TabsList><span className="text-[10px] font-medium text-muted-foreground">{cards.length} {t.allCards}</span></div>
-    {condition==="rmw"&&<TabsContent value="brief" className="m-0 min-h-0 flex-1 overflow-auto"><ResumeBrief locale={locale} cards={cards} t={t}/></TabsContent>}
-    <TabsContent value="cards" className="m-0 grid min-h-0 flex-1 grid-cols-[1.18fr_.82fr]"><div className="hide-scrollbar min-h-0 overflow-y-auto border-r px-4 py-3"><div className="mb-3 rounded-lg bg-secondary/70 p-3 text-xs leading-5 text-secondary-foreground"><strong>{t.ready}：</strong>{t.readFirst}</div><GoalHierarchy cards={cards} locale={locale} selected={selected} setSelected={setSelected}/><p className="mb-2 mt-4 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Problem state cards</p>{cards.filter(card=>card.cardType!=="goal").map(card=><ReasoningCardView key={card.id} card={card} locale={locale} selected={selected===card.id} onSelect={()=>{setSelected(card.id);eventLog("card_selected",{id:card.id},{stage:"recovery",targetType:"reasoning_card",targetId:card.id})}} updateStatus={updateStatus} t={t}/>)}</div><CardInspector key={`${selected}-${locale}`} card={cards.find(card=>card.id===selected) || cards[0]} locale={locale} updateStatus={updateStatus} togglePin={togglePin} updateContent={updateContent} t={t}/></TabsContent>
-    <TabsContent value="network" className="m-0 min-h-0 flex-1"><KnowledgeNetwork locale={locale} cards={cards} relations={relations} selected={selected} setSelected={setSelected}/></TabsContent>
-  </Tabs><PrimaryContinue locale={locale} remaining={remaining} testMode={testMode} setScreen={setScreen} t={t}/></RecoveryShell>;
+// Single-protocol design (no recovery conditions): the continuation phase
+// never reveals recovery support, a summary, cards, or a network. It only
+// tells the participant that a new source was added, matching the paper's
+// D6-continuation step after the unsupported T2 probe.
+function ContinuationPanel({locale,taskId,remaining,testMode,setScreen,t}:{locale:Locale;taskId:ResearchTaskId;remaining:number;testMode:boolean;setScreen:(s:Screen)=>void;t:typeof copy[Locale]}) {
+  const task=getResearchTask(taskId);
+  return <RecoveryShell t={t}>
+    <div className="mx-6 mt-4 min-h-0 flex-1 overflow-auto rounded-xl border bg-white p-5 text-sm leading-6 text-muted-foreground">
+      <p className="text-xs font-semibold uppercase tracking-wider text-primary">{locale==="zh-CN"?"继续研究":"Continue the task"}</p>
+      <p className="mt-3">{locale==="zh-CN"?"中断已经结束。材料面板中新增了一份证据，请据此继续完成并修改你的备忘录。":"The interruption has ended. A new source has been added to the materials panel; continue and revise your memo accordingly."}</p>
+      <p className="mt-3 font-medium text-foreground">{task.recoveryMaterial.title[locale]}</p>
+    </div>
+    <PrimaryContinue locale={locale} remaining={remaining} testMode={testMode} setScreen={setScreen} t={t}/>
+  </RecoveryShell>;
 }
 
 function RecoveryShell({children,t}:{children:React.ReactNode;t:typeof copy[Locale]}) { return <div className="flex min-h-0 flex-col bg-[#fbfcfe]"><div className="flex h-14 shrink-0 items-center border-b px-5"><h2 className="flex items-center gap-2 font-semibold"><Brain size={20} className="text-primary"/>{t.recovery}</h2></div>{children}</div> }
-
-function ResumeBrief({locale,cards,t}:{locale:Locale;cards:ReasoningCard[];t:typeof copy[Locale]}) {
-  const main=cards.find(card=>card.goalLevel==="main");
-  const subgoals=cards.filter(card=>card.goalLevel==="subgoal"&&card.status!=="expired").slice(0,2);
-  const uncertain=cards.find(card=>card.status==="uncertain");
-  const ruled=cards.find(card=>card.cardType==="path"&&card.status==="expired");
-  const next=cards.find(card=>card.cardType==="next_action");
-  const rows=[
-    [Target,t.currentGoal,main?.content[locale]||"—"],
-    [Brain,t.position,subgoals.map(card=>card.content[locale]).join(" · ")],
-    [WarningCircle,t.uncertain,uncertain?.content[locale]||"—"],
-    [XCircle,t.ruled,ruled?.content[locale]||"—"],
-    [ArrowRight,t.nextStep,next?.content[locale]||main?.nextAction?.[locale]||"—"],
-  ];
-  return <div className="mx-auto max-w-2xl px-6 py-5"><div className="mb-3 rounded-lg border border-indigo-100 bg-indigo-50/60 p-3 text-xs leading-5 text-indigo-900">{locale==="zh-CN"?"以下仅显示中断前已保存的恢复关键点；存疑内容不会被压平为结论。":"Only the calibrated recovery-critical state is shown; uncertain content is not flattened into a conclusion."}</div><div className="divide-y rounded-xl border bg-white">{rows.map(([I,label,value],i)=>{const Icon=I as typeof Target;return <div key={String(label)} className={`grid grid-cols-[32px_120px_1fr] items-start gap-2 px-4 py-3 ${i===4?"bg-[var(--active-soft)]":""}`}><Icon size={18} className={i===2?"text-[var(--uncertain)]":i===4?"text-[var(--active)]":"text-primary"}/><span className="text-xs font-medium text-muted-foreground">{String(label)}</span><span className="text-sm leading-5">{String(value)}</span></div>})}</div></div>
-}
-
-function GoalHierarchy({cards,locale,selected,setSelected}:{cards:ReasoningCard[];locale:Locale;selected:string;setSelected:(id:string)=>void}) {
-  const main=cards.find(card=>card.goalLevel==="main");
-  const active=cards.filter(card=>card.goalLevel==="subgoal").slice(0,4);
-  const suspended=cards.filter(card=>card.goalLevel==="suspended").slice(0,3);
-  const tile=(card:ReasoningCard)=> {
-    const tone=card.status==="uncertain"?"border-amber-200 bg-amber-50/70":card.status==="expired"?"border-slate-200 bg-slate-50 text-slate-500":"border-emerald-200 bg-emerald-50/55";
-    return <button key={card.id} onClick={()=>{setSelected(card.id);eventLog("goal_selected",{goalLevel:card.goalLevel},{stage:"recovery",targetType:"reasoning_card",targetId:card.id})}} className={`w-full rounded-lg border p-2.5 text-left ${tone} ${selected===card.id?"ring-2 ring-primary/25":""}`}><div className="flex items-center justify-between"><span className="text-[9px] font-semibold uppercase tracking-wider">{card.status}</span>{card.priority==="pinned"&&<PushPin size={12} weight="fill" className="text-primary"/>}</div><p className="mt-1.5 text-[11px] font-semibold leading-4 text-foreground">{card.content[locale]}</p>{card.nextAction&&<p className="mt-1 line-clamp-1 text-[9px] text-muted-foreground">→ {card.nextAction[locale]}</p>}</button>
-  };
-  return <div className="rounded-xl border bg-white p-3"><div className="mb-2 flex items-center justify-between"><p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{locale==="zh-CN"?"目标层级":"Goal hierarchy"}</p><Badge variant="outline" className="text-[9px]">{active.length}/4 active</Badge></div>{main&&tile(main)}<div className="mt-2 grid grid-cols-[1.25fr_.75fr] gap-2"><div><p className="mb-1.5 text-[9px] font-medium text-muted-foreground">{locale==="zh-CN"?"活跃子目标":"Active subgoals"}</p><div className="grid grid-cols-2 gap-2">{active.map(tile)}</div></div><details open className="rounded-lg bg-muted/40 p-2"><summary className="cursor-pointer text-[9px] font-medium text-muted-foreground">{locale==="zh-CN"?"挂起目标":"Suspended goals"} · {suspended.length}</summary><div className="mt-2 space-y-2">{suspended.map(tile)}</div></details></div></div>
-}
-
-function CardInspector({card,locale,updateStatus,togglePin,updateContent,t}:{card:ReasoningCard;locale:Locale;updateStatus:(id:string,s:EpistemicStatus)=>void;togglePin:(id:string)=>void;updateContent:(id:string,value:string)=>void;t:typeof copy[Locale]}) {
-  const [editing,setEditing]=useState(false);
-  const [draft,setDraft]=useState(card.content[locale]);
-  return <aside className="min-h-0 overflow-y-auto bg-[#fcfcfd] p-4"><div className="flex items-start justify-between"><div><Badge variant="outline" className="text-[9px]">{card.goalLevel||card.cardType}</Badge><h3 className="mt-3 text-sm font-semibold leading-5">{card.content[locale]}</h3></div>{card.priority==="pinned"&&<PushPin size={16} weight="fill" className="text-primary"/>}</div>{editing?<div className="mt-4"><Textarea value={draft} onChange={e=>setDraft(e.target.value)} className="min-h-24 text-xs leading-5"/><div className="mt-2 flex gap-2"><Button size="sm" onClick={()=>{updateContent(card.id,draft);setEditing(false)}}><Check/>{t.verify}</Button><Button size="sm" variant="ghost" onClick={()=>setEditing(false)}>Cancel</Button></div></div>:<p className="mt-3 text-xs leading-5 text-muted-foreground">{card.detail[locale]}</p>}<div className="mt-4 rounded-lg border bg-white p-3"><div className="flex gap-2"><LinkSimple size={14} className="mt-0.5 shrink-0 text-primary"/><div><p className="text-[10px] font-semibold">{locale==="zh-CN"?"来源与回链":"Source backlink"}</p><p className="mt-1 text-[10px] leading-4 text-muted-foreground">{card.sourceRefs.map(source=>source.label).join(" · ")||"No source"}</p></div></div>{card.riskTags.length>0&&<div className="mt-3 flex flex-wrap gap-1">{card.riskTags.map(tag=><Badge key={tag} variant="secondary" className="text-[8px]">{tag}</Badge>)}</div>}</div>{typeof card.confidence==="number"&&<div className="mt-4"><div className="mb-1 flex justify-between text-[10px]"><span>{locale==="zh-CN"?"提取置信度":"Extraction confidence"}</span><span>{card.confidence}%</span></div><Progress value={card.confidence} className="h-1.5"/></div>}<div className="mt-5 grid grid-cols-2 gap-2"><Button size="sm" variant={card.status==="active"?"secondary":"outline"} onClick={()=>updateStatus(card.id,"active")}><CheckCircle/>{t.verify}</Button><Button size="sm" variant="outline" onClick={()=>setEditing(true)}><NotePencil/>{locale==="zh-CN"?"编辑":"Edit"}</Button><Button size="sm" variant="outline" onClick={()=>togglePin(card.id)}><PushPin/>{t.pin}</Button><Button size="sm" variant="outline" onClick={()=>updateStatus(card.id,"uncertain")}><WarningCircle/>{locale==="zh-CN"?"存疑":"Uncertain"}</Button><Button size="sm" variant="ghost" className="col-span-2" onClick={()=>updateStatus(card.id,"expired")}><PauseCircle/>{t.expire}</Button></div><p className="mt-4 text-[9px] leading-4 text-muted-foreground">{locale==="zh-CN"?"接受、编辑、置顶、存疑和过期都会被作为独立事件记录。":"Accept, edit, pin, uncertainty, and expiry are logged as separate events."}</p></aside>
-}
-
-function ReasoningCardView({card,locale,selected,onSelect,updateStatus,t}:{card:ReasoningCard;locale:Locale;selected:boolean;onSelect:()=>void;updateStatus:(id:string,s:EpistemicStatus)=>void;t:typeof copy[Locale]}) { const status={active:{label:"Active",icon:CheckCircle,cls:"border-l-[var(--active)] bg-[var(--active-soft)]/55 text-[var(--active)]"},uncertain:{label:"Uncertain",icon:WarningCircle,cls:"border-l-[var(--uncertain)] bg-[var(--uncertain-soft)]/60 text-[var(--uncertain)]"},expired:{label:"Expired",icon:PauseCircle,cls:"border-l-[var(--expired)] bg-muted/50 text-[var(--expired)]"},draft:{label:"Draft",icon:Clock,cls:"border-l-primary bg-secondary/40 text-primary"}}[card.status]; const Icon=status.icon; return <article onClick={onSelect} className={`mb-2 cursor-pointer rounded-lg border border-l-[3px] bg-white p-3 transition ${status.cls} ${selected?"ring-2 ring-primary/20 shadow-sm":"hover:shadow-sm"}`}><div className="flex items-center justify-between"><span className="flex items-center gap-1.5 text-[10px] font-semibold"><Icon size={14}/>{status.label}{card.priority==="pinned"&&<PushPin size={13} weight="fill"/>}</span><span className="text-[9px] text-muted-foreground">v{card.revision}</span></div><h3 className="mt-2 text-[13px] font-semibold leading-5 text-foreground">{card.content[locale]}</h3><p className="mt-1 line-clamp-2 text-[11px] leading-4 text-muted-foreground">{card.detail[locale]}</p><div className="mt-2 flex items-center justify-between border-t pt-2"><button onClick={e=>{e.stopPropagation();eventLog("evidence_opened",{card:card.id})}} className="flex items-center gap-1 text-[10px] font-medium text-primary hover:underline"><LinkSimple size={12}/>{t.evidence} · {card.sourceRefs[0]?.label}</button>{card.status==="uncertain"?<button onClick={e=>{e.stopPropagation();updateStatus(card.id,"active")}} className="text-[10px] font-medium text-[var(--active)] hover:underline">{t.verify}</button>:card.status==="expired"?<button onClick={e=>{e.stopPropagation();updateStatus(card.id,"active")}} className="text-[10px] hover:underline">{t.restore}</button>:<button onClick={e=>{e.stopPropagation();updateStatus(card.id,"expired")}} className="text-[10px] text-muted-foreground hover:underline">{t.expire}</button>}</div></article> }
-
-type FlowData={ label:string; status:EpistemicStatus; selected:boolean };
-function FlowNode({data}:{data:FlowData}) { const colors=data.status==="active"?"border-emerald-400 bg-emerald-50":data.status==="uncertain"?"border-amber-400 bg-amber-50":"border-slate-300 bg-slate-50"; return <div className={`w-[118px] rounded-lg border-2 px-3 py-2 text-center text-[10px] font-medium leading-4 shadow-sm ${colors} ${data.selected?"ring-4 ring-indigo-100":""}`}><Handle type="target" position={Position.Left}/>{data.label}<Handle type="source" position={Position.Right}/></div> }
-const nodeTypes={reason:FlowNode};
-function computeFlowPositions(cards: ReasoningCard[]): Record<string, { x: number; y: number }> {
-  const result: Record<string, { x: number; y: number }> = {};
-  const groups = [
-    cards.filter((c) => c.goalLevel === "main"),
-    cards.filter((c) => c.goalLevel === "subgoal"),
-    cards.filter((c) => c.goalLevel === "suspended"),
-    cards.filter((c) => !c.goalLevel),
-  ];
-  groups.forEach((group, row) => group.forEach((card, col) => {
-    result[card.id] = { x: 60 + col * 190, y: 20 + row * 105 };
-  }));
-  return result;
-}
-function KnowledgeNetwork({locale,cards,relations,selected,setSelected,compact=false}:{locale:Locale;cards:ReasoningCard[];relations:CardRelation[];selected:string;setSelected:(s:string)=>void;compact?:boolean}) {
-  const positions=useMemo(()=>computeFlowPositions(cards),[cards]);
-  const nodes=useMemo<Node<FlowData>[]>(()=>cards.map(c=>({id:c.id,type:"reason",position:positions[c.id]||{x:0,y:0},data:{label:c.content[locale],status:c.status,selected:c.id===selected}})),[cards,locale,positions,selected]);
-  const edges=useMemo<Edge[]>(()=>relations.map(r=>({id:r.id,source:r.sourceCardId,target:r.targetCardId,label:compact?undefined:r.relationType,animated:r.relationType==="leads_to",style:{stroke:r.relationType==="challenges"?"#c58a2c":"#8a93a5"},labelStyle:{fontSize:9,fill:"#6b7280"}})),[compact,relations]);
-  // KnowledgeNetwork mounts inside a Base UI Tabs panel, which animates in on
-  // a transition. ReactFlow's fitView runs once at mount against whatever
-  // size the container has at that instant, which can be a mid-transition
-  // size -- leaving the graph zoomed/panned out of view. Re-fit once the
-  // panel has actually settled.
-  const refit=(instance:{fitView:(options?:{padding?:number})=>void})=>{
-    requestAnimationFrame(()=>requestAnimationFrame(()=>instance.fitView({padding:.2})));
-    window.setTimeout(()=>instance.fitView({padding:.2}),200);
-  };
-  return <div className="h-full min-h-0 bg-[#fcfcfd]"><ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} fitView minZoom={.45} maxZoom={1.4} onInit={refit} onNodeClick={(_,n)=>{setSelected(n.id);eventLog("network_node_clicked",{id:n.id})}}><Background gap={22} size={1} color="#e8eaf0"/>{!compact&&<Controls position="bottom-right" showInteractive={false}/>}</ReactFlow></div>;
-}
 
 function PrimaryContinue({locale,remaining,testMode,setScreen,t}:{locale:Locale;remaining:number;testMode:boolean;setScreen:(s:Screen)=>void;t:typeof copy[Locale]}) {
   if(!testMode)return <div className="shrink-0 border-t bg-white px-5 py-3"><TimedButton seconds={10} ready={remaining<=0} locale={locale} label={locale==="zh-CN"?"完成恢复阶段并继续":"Finish the recovery period and continue"} blockedLabel={locale==="zh-CN"?`固定恢复阶段进行中 · 剩余 ${Math.ceil(remaining/60)} 分钟`:`Fixed recovery period · ${Math.ceil(remaining/60)} min remaining`} className="h-11 w-full text-sm" onClick={()=>{eventLog("recovery_period_completed",{remaining},{stage:"recovery"});setScreen("post_survey")}} /></div>;
