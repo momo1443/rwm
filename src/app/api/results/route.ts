@@ -33,11 +33,25 @@ const recoveryAssessmentSchema = z.object({
     viewedSections: z.array(z.string().min(1).max(100)).max(20),
   }).strict().optional(),
   postSurvey: z.object({
-    continuity: z.number().int().min(1).max(7),
+    // Adapted NASA-TLX task load
     mentalDemand: z.number().int().min(1).max(7),
-    confidence: z.number().int().min(1).max(7),
-    agency: z.number().int().min(1).max(7),
-    supportSufficiency: z.number().int().min(1).max(7),
+    temporalDemand: z.number().int().min(1).max(7),
+    effort: z.number().int().min(1).max(7),
+    frustration: z.number().int().min(1).max(7),
+    performanceSatisfaction: z.number().int().min(1).max(7),
+    // Perceived reasoning-position loss (subjective corroboration of T1-T2 loss)
+    judgmentUncertain: z.number().int().min(1).max(7),
+    rejectedPathBlurred: z.number().int().min(1).max(7),
+    nextActionForgotten: z.number().int().min(1).max(7),
+    // Metacognitive confidence
+    distinguishCertainty: z.number().int().min(1).max(7),
+    confidentInAnswer: z.number().int().min(1).max(7),
+    // AI reliance
+    reliedOnAI: z.number().int().min(1).max(7),
+    mightMissAIErrors: z.number().int().min(1).max(7),
+    // Agency
+    memoOwnership: z.number().int().min(1).max(7),
+    overallControl: z.number().int().min(1).max(7),
   }).strict().optional(),
 }).strict();
 const snapshotSchema = z.object({

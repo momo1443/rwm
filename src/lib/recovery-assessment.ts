@@ -17,13 +17,49 @@ export type RecoveryReadiness = {
   viewedSections: string[];
 };
 
-export type RecoveryPostSurvey = {
-  continuity: number;
-  mentalDemand: number;
-  confidence: number;
-  agency: number;
-  supportSufficiency: number;
+// Post-task survey. Five adapted subscales — see docs/post-task-survey-references.md
+// for the source of each group and why the single-protocol design (no recovery
+// support is ever shown) rules out asking about "recovery support" directly.
+export const postTaskSurveyGroups = ["task_load", "perceived_loss", "metacognition", "ai_reliance", "agency"] as const;
+export type PostTaskSurveyGroup = typeof postTaskSurveyGroups[number];
+
+export const postTaskSurveyGroupLabels: Record<PostTaskSurveyGroup, Record<Locale, string>> = {
+  task_load: { "zh-CN": "任务负荷（NASA-TLX 改编）", en: "Task load (adapted NASA-TLX)" },
+  perceived_loss: { "zh-CN": "主观推理位置损失", en: "Perceived reasoning-position loss" },
+  metacognition: { "zh-CN": "元认知信心", en: "Metacognitive confidence" },
+  ai_reliance: { "zh-CN": "AI 依赖", en: "AI reliance" },
+  agency: { "zh-CN": "掌控感", en: "Agency" },
 };
+
+export const postTaskSurveyItemKeys = [
+  "mentalDemand", "temporalDemand", "effort", "frustration", "performanceSatisfaction",
+  "judgmentUncertain", "rejectedPathBlurred", "nextActionForgotten",
+  "distinguishCertainty", "confidentInAnswer",
+  "reliedOnAI", "mightMissAIErrors",
+  "memoOwnership", "overallControl",
+] as const;
+export type PostTaskSurveyItemKey = typeof postTaskSurveyItemKeys[number];
+
+export type PostTaskSurveyItem = { key: PostTaskSurveyItemKey; group: PostTaskSurveyGroup; zh: string; en: string };
+
+export const postTaskSurveyItems: PostTaskSurveyItem[] = [
+  { key: "mentalDemand", group: "task_load", zh: "完成这项任务需要很高的脑力和思考投入。", en: "The task required a great deal of mental and thinking activity." },
+  { key: "temporalDemand", group: "task_load", zh: "任务过程中我感觉时间压力很大。", en: "I felt a strong sense of time pressure during the task." },
+  { key: "effort", group: "task_load", zh: "为了完成任务，我需要付出很大努力。", en: "I had to work hard to accomplish my level of performance." },
+  { key: "frustration", group: "task_load", zh: "完成任务过程中我感到有压力、烦躁或不耐烦。", en: "I felt stressed, irritated, or annoyed while completing the task." },
+  { key: "performanceSatisfaction", group: "task_load", zh: "我对自己完成这项任务的表现感到满意。", en: "I am satisfied with my performance on this task." },
+  { key: "judgmentUncertain", group: "perceived_loss", zh: "中断后，我对中断前的判断变得不确定。", en: "After the interruption, I became uncertain about my pre-interruption judgment." },
+  { key: "rejectedPathBlurred", group: "perceived_loss", zh: "中断后，我需要重新想清楚哪些方向此前已经排除。", en: "After the interruption, I had to work out again which directions I had already ruled out." },
+  { key: "nextActionForgotten", group: "perceived_loss", zh: "中断后，我不确定自己原本计划的下一步是什么。", en: "After the interruption, I was unsure what I had originally planned to do next." },
+  { key: "distinguishCertainty", group: "metacognition", zh: "我能清楚区分哪些是我确定的、哪些只是猜测。", en: "I could clearly distinguish what I was certain about from what I was merely guessing." },
+  { key: "confidentInAnswer", group: "metacognition", zh: "我对自己刚才提交的回答的准确性有信心。", en: "I am confident in the accuracy of the answers I just submitted." },
+  { key: "reliedOnAI", group: "ai_reliance", zh: "我在很大程度上依赖 AI 的建议来形成判断。", en: "I relied heavily on the AI's suggestions to form my judgment." },
+  { key: "mightMissAIErrors", group: "ai_reliance", zh: "如果 AI 的判断有误，我可能不会立刻发现。", en: "If the AI's judgment had been wrong, I might not have noticed right away." },
+  { key: "memoOwnership", group: "agency", zh: "我感觉最终备忘录的内容是由我自己主导决定的。", en: "I felt that I was the one driving the content of my final memo." },
+  { key: "overallControl", group: "agency", zh: "在完成整个任务的过程中，我感觉判断始终由自己掌控。", en: "Throughout the task, I felt in control of my own judgment." },
+];
+
+export type RecoveryPostSurvey = Record<PostTaskSurveyItemKey, number>;
 
 export type RecoveryAssessment = {
   version: "reasoning-recovery-v2";

@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { chatCounts, interruptionMetrics, taskMilestones, type AdminMetricEvent, type InterruptionMetric } from "@/lib/admin-result-metrics";
 import { answerLabel, mean, scoredSubscales, subscaleScores, surveyItems, type SurveyAnswer } from "@/lib/pre-survey-admin";
 import { researchTaskMetadata } from "@/lib/research-task";
-import { reasoningRecallDimensions, reasoningRecallShortLabels, type RecoveryAssessment, type RecoveryProbeStage } from "@/lib/recovery-assessment";
+import { postTaskSurveyGroupLabels, postTaskSurveyGroups, postTaskSurveyItems, reasoningRecallDimensions, reasoningRecallShortLabels, type RecoveryAssessment, type RecoveryProbeStage } from "@/lib/recovery-assessment";
 
 type AnalysisStatus = "included" | "excluded" | "trashed";
 type ResultSummary = {
@@ -221,7 +221,7 @@ function RecoveryAssessmentPanel({ value }: { value: unknown }) {
   return <section className="space-y-4">
     <div><h3 className="text-sm font-semibold">跨任务推理恢复测量</h3><p className="mt-1 text-[11px] leading-5 text-muted-foreground">T1、T2、T3 均记录六个推理维度。原始文本需由不知道实验条件的编码员按预注册 rubric 评分（见结果盲评 · T1→T3 推理恢复评分）。</p></div>
     <div className="grid gap-3 sm:grid-cols-2"><MetricTile label="测量完整度" value={`${stages.filter((stage) => assessment.probes[stage]).length}/3`} detail="T1、T2、T3"/><MetricTile label="支持就绪时间" value={assessment.readiness ? `${(assessment.readiness.latencyMs / 1000).toFixed(1)} 秒` : "—"} detail="支持呈现到主动继续"/></div>
-    {assessment.postSurvey && <div className="grid gap-3 sm:grid-cols-5"><MetricTile label="思路连续性" value={`${assessment.postSurvey.continuity}/7`} detail="越高越好"/><MetricTile label="脑力负荷" value={`${assessment.postSurvey.mentalDemand}/7`} detail="越低越好"/><MetricTile label="恢复信心" value={`${assessment.postSurvey.confidence}/7`} detail="越高越好"/><MetricTile label="主观能动性" value={`${assessment.postSurvey.agency}/7`} detail="越高越好"/><MetricTile label="信息充分性" value={`${assessment.postSurvey.supportSufficiency}/7`} detail="越高越好"/></div>}
+    {assessment.postSurvey && <div className="space-y-4">{postTaskSurveyGroups.map((group) => <div key={group}><p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{postTaskSurveyGroupLabels[group]["zh-CN"]}</p><div className="grid gap-3 sm:grid-cols-3">{postTaskSurveyItems.filter((item) => item.group === group).map((item) => <MetricTile key={item.key} label={item.zh} value={`${assessment.postSurvey?.[item.key] ?? "—"}/7`} detail=""/>)}</div></div>)}</div>}
     {assessment.participantNotes && <article className="rounded-lg border p-4"><p className="text-xs font-medium">参与者中断前自主笔记</p><p className="mt-2 whitespace-pre-wrap text-xs leading-6 text-muted-foreground">{assessment.participantNotes}</p></article>}
     <div className="space-y-3">{stages.map((stage) => { const probe = assessment.probes[stage]; return <article key={stage} className="rounded-xl border p-4"><h4 className="text-sm font-semibold">{recoveryStageLabels[stage]}</h4>{probe ? <div className="mt-3 grid gap-2 sm:grid-cols-2">{reasoningRecallDimensions.map((dimension) => <div key={dimension} className="rounded-lg bg-muted/35 p-3"><p className="text-[10px] font-medium text-muted-foreground">{reasoningRecallShortLabels[dimension]["zh-CN"]}</p><p className="mt-1 whitespace-pre-wrap text-xs leading-5">{probe.reasoning[dimension]}</p></div>)}</div> : <p className="mt-3 text-xs text-muted-foreground">未保存该测量点。</p>}</article>; })}</div>
   </section>;
