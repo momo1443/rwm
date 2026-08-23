@@ -49,7 +49,7 @@ The participant does not choose the model. The server uses `DEEPSEEK_MODEL`, fal
 1. Work with D1–D5, the AI tutor, and the memo editor for exactly 15 minutes.
 2. Freeze the memo, conversation, material-exposure set, and event cutoff before any recall prompt appears.
 3. Collect T1: six reasoning-position items plus six content items (counterbalanced Form A/B).
-4. Complete two untimed interruption games: six letter 2-back trials followed by six color-interference trials. Accuracy, response time, and actual completion duration are process checks, not pass/fail gates.
+4. Complete two untimed interruption games: six letter 2-back trials followed by six color-interference trials. Each game requires a perfect score; a lower score restarts that game. Response time, attempts, and actual completion duration are retained as process measures.
 5. Collect unsupported T2 using the parallel content form and the same six reasoning dimensions. No materials, transcript, memo, summary, cards, or other recovery aid are visible.
 6. Reveal D6 and run a fixed 10-minute continuation before the post-task survey.
 

@@ -84,7 +84,7 @@ const conditionLabels: Record<string, string> = {
   control: "旧版无辅助对照",
 };
 const activeConditionDefinitions = [
-  { id: "rmw", label: "单一刻画协议", description: "固定城市治理任务：15 分钟工作 → 冻结 trace → T1（6+6）→ 两个中断游戏 → T2（6+6）→ D6 → 10 分钟延续。" },
+  { id: "rmw", label: "单一刻画协议", description: "固定城市治理任务：15 分钟工作 → 冻结 trace → T1（6+6）→ 两个满分中断游戏 → T2（6+6）→ D6 → 10 分钟延续。" },
 ] as const;
 const exclusionReasons = ["研究者测试", "自动化或非真实被试", "未完成实验", "技术故障", "重复记录", "不符合纳入标准", "被试要求撤回", "其他"];
 
@@ -202,7 +202,7 @@ function InterruptionGameCard({ title, metric }: { title: string; metric: Interr
 
 function InterruptionPanel({ events }: { events: ResultEvent[] }) {
   const metrics = interruptionMetrics(events);
-  return <div className="space-y-5"><div className="rounded-lg bg-blue-50 p-4 text-xs leading-5 text-blue-900"><p className="font-semibold">问题：被试是否完成两个认知中断游戏？</p><p className="mt-1">新协议依次完成 6 题字母 2-back 和 6 题颜色干扰；不设时限或满分门槛，正确率、反应时和实际用时作为过程检查。</p><p className="mt-2 font-mono">实际完成时长：{metrics.durationSeconds == null ? "—" : `${metrics.durationSeconds.toFixed(1)} 秒`}</p></div><div className="grid gap-4"><InterruptionGameCard title="字母 2-back" metric={metrics.letter}/><InterruptionGameCard title="颜色干扰" metric={metrics.color}/></div></div>;
+  return <div className="space-y-5"><div className="rounded-lg bg-blue-50 p-4 text-xs leading-5 text-blue-900"><p className="font-semibold">问题：被试是否满分完成两个认知中断游戏？</p><p className="mt-1">新协议依次完成 6 题字母 2-back 和 6 题颜色干扰；每个游戏均需满分，未满分则重试，不设时间限制。</p><p className="mt-2 font-mono">实际完成时长：{metrics.durationSeconds == null ? "—" : `${metrics.durationSeconds.toFixed(1)} 秒`}</p></div><div className="grid gap-4"><InterruptionGameCard title="字母 2-back" metric={metrics.letter}/><InterruptionGameCard title="颜色干扰" metric={metrics.color}/></div></div>;
 }
 
 type ProblemStateView = { cards?: Array<{ id?: string; kind?: string; status?: string; priority?: string; confidence?: number; content?: Record<string, string> }>; relations?: unknown[] };

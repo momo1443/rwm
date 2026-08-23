@@ -345,7 +345,7 @@ export function InterruptionTask({ locale, fastMode, onComplete }: { locale: Loc
 
   useEffect(() => {
     interruptionStartedAtRef.current = Date.now();
-    eventLog("interruption_started", { completionMode: "two_games", letterTrials: letterTotal, colorTrials: colorTrials.length, testMode: fastMode }, { stage: "interruption" });
+    eventLog("interruption_started", { completionMode: "two_perfect_games", letterTrials: letterTotal, colorTrials: colorTrials.length, testMode: fastMode }, { stage: "interruption" });
   }, [fastMode, letterTotal]);
 
   useEffect(() => {
@@ -366,15 +366,25 @@ export function InterruptionTask({ locale, fastMode, onComplete }: { locale: Loc
     setColorIndex((value) => value + 1);
   };
   const finishLetterGame = () => {
-    eventLog("letter_game_completed", { score: letterCorrect, total: letterTotal }, { stage: "interruption" });
+    eventLog("letter_game_passed", { score: letterCorrect, total: letterTotal }, { stage: "interruption" });
     setGame("color");
+  };
+  const retryLetterGame = () => {
+    eventLog("letter_game_retried", { score: letterCorrect, total: letterTotal }, { stage: "interruption" });
+    setIndex(2);
+    setLetterCorrect(0);
+  };
+  const retryColorGame = () => {
+    eventLog("color_game_retried", { score: colorCorrect, total: colorTrials.length }, { stage: "interruption" });
+    setColorIndex(0);
+    setColorCorrect(0);
   };
   const finishInterruption = () => {
     if (completedRef.current) return;
     completedRef.current = true;
     const durationSeconds = interruptionStartedAtRef.current === null ? null : (Date.now() - interruptionStartedAtRef.current) / 1000;
-    eventLog("color_game_completed", { score: colorCorrect, total: colorTrials.length }, { stage: "interruption" });
-    eventLog("interruption_completed", { completionMode: "two_games", durationSeconds, letterCorrect, letterResponses: letterTotal, colorCorrect, colorResponses: colorTrials.length, testMode: fastMode }, { stage: "interruption" });
+    eventLog("color_game_passed", { score: colorCorrect, total: colorTrials.length }, { stage: "interruption" });
+    eventLog("interruption_completed", { completionMode: "two_perfect_games", durationSeconds, letterCorrect, letterResponses: letterTotal, colorCorrect, colorResponses: colorTrials.length, perfect: true, testMode: fastMode }, { stage: "interruption" });
     onComplete();
   };
   const colorTrial = colorComplete ? null : colorTrials[colorIndex];
@@ -390,13 +400,13 @@ export function InterruptionTask({ locale, fastMode, onComplete }: { locale: Loc
           {!letterComplete ? <>
             <div className="my-10 flex items-center justify-center gap-3">{[twoBackLetter, previousLetter, currentLetter].map((letter, position) => <span key={`${index}-${position}`} className={`grid place-items-center rounded-2xl border font-mono font-semibold ${position === 2 ? "size-32 bg-primary text-6xl text-white shadow-lg" : "size-16 bg-muted text-2xl text-muted-foreground"}`}>{letter}</span>)}</div>
             <div className="grid grid-cols-2 gap-3"><Button variant="outline" className="h-14 text-base" onClick={(event) => answerLetter(false, event.timeStamp)}>{t.different}</Button><Button className="h-14 text-base" onClick={(event) => answerLetter(true, event.timeStamp)}>{t.same}</Button></div>
-          </> : <div className="py-8"><p className="text-2xl font-semibold">{letterCorrect} / {letterTotal}</p><p className="mt-2 text-sm text-muted-foreground">{locale === "zh-CN" ? "游戏 1 已完成" : "Game 1 completed"}</p><Button className="mt-6 w-full" onClick={finishLetterGame}>{t.nextGame}<ArrowRight /></Button></div>}
+          </> : <div className="py-8"><p className="text-2xl font-semibold">{letterCorrect} / {letterTotal}</p><p className="mt-2 text-sm text-muted-foreground">{letterCorrect === letterTotal ? (locale === "zh-CN" ? "满分通过" : "Perfect score") : (locale === "zh-CN" ? "需要满分，请重试" : "A perfect score is required; retry")}</p>{letterCorrect === letterTotal ? <Button className="mt-6 w-full" onClick={finishLetterGame}>{t.nextGame}<ArrowRight /></Button> : <Button className="mt-6 w-full" variant="outline" onClick={retryLetterGame}>{t.retry}</Button>}</div>}
         </> : <>
           <div className="flex items-center justify-between text-xs text-muted-foreground"><span>{locale === "zh-CN" ? "游戏 2：颜色干扰" : "Game 2: color interference"}</span><span>{Math.min(colorIndex, colorTrials.length)} / {colorTrials.length}</span></div>
           <Progress value={(colorIndex / colorTrials.length) * 100} className="mt-3 h-1.5" />
-          {!colorComplete && colorTrial ? <><div className="my-14"><p className={`text-7xl font-bold ${colorCss[colorTrial.color]}`}>{locale === "zh-CN" ? colorTrial.word : colorWordEn[colorTrial.word]}</p></div><div className="grid grid-cols-3 gap-3">{(["orange", "blue", "purple"] as const).map((color) => <Button key={color} variant="outline" className="h-14 text-base" onClick={(event) => answerColor(color, event.timeStamp)}>{locale === "zh-CN" ? { orange: "橙色", blue: "蓝色", purple: "紫色" }[color] : color[0].toUpperCase() + color.slice(1)}</Button>)}</div></> : <div className="py-8"><p className="text-2xl font-semibold">{colorCorrect} / {colorTrials.length}</p><p className="mt-2 text-sm text-muted-foreground">{locale === "zh-CN" ? "游戏 2 已完成" : "Game 2 completed"}</p><Button className="mt-6 w-full" onClick={finishInterruption}>{t.finish}<ArrowRight /></Button></div>}
+          {!colorComplete && colorTrial ? <><div className="my-14"><p className={`text-7xl font-bold ${colorCss[colorTrial.color]}`}>{locale === "zh-CN" ? colorTrial.word : colorWordEn[colorTrial.word]}</p></div><div className="grid grid-cols-3 gap-3">{(["orange", "blue", "purple"] as const).map((color) => <Button key={color} variant="outline" className="h-14 text-base" onClick={(event) => answerColor(color, event.timeStamp)}>{locale === "zh-CN" ? { orange: "橙色", blue: "蓝色", purple: "紫色" }[color] : color[0].toUpperCase() + color.slice(1)}</Button>)}</div></> : <div className="py-8"><p className="text-2xl font-semibold">{colorCorrect} / {colorTrials.length}</p><p className="mt-2 text-sm text-muted-foreground">{colorCorrect === colorTrials.length ? (locale === "zh-CN" ? "满分通过" : "Perfect score") : (locale === "zh-CN" ? "需要满分，请重试" : "A perfect score is required; retry")}</p>{colorCorrect === colorTrials.length ? <Button className="mt-6 w-full" onClick={finishInterruption}>{t.finish}<ArrowRight /></Button> : <Button className="mt-6 w-full" variant="outline" onClick={retryColorGame}>{t.retry}</Button>}</div>}
         </>}
-        <p className="mt-5 text-xs text-muted-foreground">{locale === "zh-CN" ? "完成两个游戏后进入 T2；不计时，也不要求满分。正确率、反应时和实际完成时长仅用于过程检查。" : "Complete both games to continue to T2. There is no time limit or perfect-score requirement; accuracy, response time, and actual duration are process measures only."}</p>
+        <p className="mt-5 text-xs text-muted-foreground">{locale === "zh-CN" ? "两个游戏均需满分；未满分时需重试。游戏不计时，系统仅记录反应时和实际完成时长。" : "A perfect score is required in both games; retry any game below full score. The games are untimed, while response time and actual duration are recorded."}</p>
       </section>
     </div>
   </div>;
