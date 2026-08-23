@@ -117,6 +117,22 @@ const requestSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("complete"), token: z.string().min(1).max(2000), data: snapshotSchema }),
 ]);
 
+function canonicalJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalJson);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, nested]) => [key, canonicalJson(nested)]));
+}
+
+function jsonValuesEqual(left: unknown, right: unknown) {
+  return JSON.stringify(canonicalJson(left)) === JSON.stringify(canonicalJson(right));
+}
+
+function instantsEqual(left: string, right: string) {
+  return Date.parse(left) === Date.parse(right);
+}
+
 async function participantFromToken(token: string, secret: string) {
   const payload = await verifySignedToken(token, secret);
   if (payload?.scope !== "participant" || typeof payload.participantCode !== "string" || typeof payload.sessionId !== "string") return null;
@@ -194,9 +210,9 @@ export async function POST(request: Request) {
     if (!current) return NextResponse.json({ error: "Study session was not found" }, { status: 404 });
     const phaseOneAlreadyFrozen = Boolean(current.phase_one_captured_at);
     if (phaseOneAlreadyFrozen && (
-      (data.phaseOneCapturedAt !== undefined && data.phaseOneCapturedAt !== current.phase_one_captured_at)
+      (data.phaseOneCapturedAt !== undefined && !instantsEqual(data.phaseOneCapturedAt, current.phase_one_captured_at!))
       || (data.phaseOneMemo !== undefined && data.phaseOneMemo !== current.phase_one_memo)
-      || (data.phaseOneChat !== undefined && JSON.stringify(data.phaseOneChat) !== JSON.stringify(current.phase_one_chat))
+      || (data.phaseOneChat !== undefined && !jsonValuesEqual(data.phaseOneChat, current.phase_one_chat))
     )) {
       return NextResponse.json({ error: "The pre-interruption trace is immutable" }, { status: 409 });
     }
@@ -204,7 +220,7 @@ export async function POST(request: Request) {
       ? current.task_assessment as { version?: unknown; frozenTrace?: unknown }
       : null;
     if (currentAssessment?.version === "reasoning-trace-gap-v1" && currentAssessment.frozenTrace && data.taskAssessment?.version === "reasoning-trace-gap-v1"
-      && JSON.stringify(data.taskAssessment.frozenTrace) !== JSON.stringify(currentAssessment.frozenTrace)) {
+      && !jsonValuesEqual(data.taskAssessment.frozenTrace, currentAssessment.frozenTrace)) {
       return NextResponse.json({ error: "The frozen trace cutoff is immutable" }, { status: 409 });
     }
     await updateParticipant(session.sessionId, {
