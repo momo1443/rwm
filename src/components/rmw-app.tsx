@@ -58,10 +58,10 @@ const copy = {
     study: "思考与恢复研究", consent: "我已阅读并同意参与研究",
     anonymous: "本次研究编号", enter: "开始研究", language: "界面语言",
     pretitle: "开始前，先了解你的经验", next: "继续", back: "返回",
-    materials: "材料", chat: "AI 助手", memo: "工作区", recovery: "推理恢复支持",
+    materials: "材料", chat: "AI 助手", memo: "分析/决策 memo", recovery: "推理恢复支持",
     day: "恢复阶段", saved: "已保存", help: "帮助", progress: "阅读进度",
     ask: "向 AI 助手提问…", disclaimer: "AI 可能出错，请结合材料与证据判断。",
-    memoPlaceholder: "继续写下你的研究问题、发现与实验计划…", words: "字",
+    memoPlaceholder: "请撰写你的当前分析/决策 memo…", words: "字",
     resume: "恢复摘要", cards: "推理卡片", network: "知识网络", relations: "关系列表",
     currentGoal: "当前目标", position: "推理位置", uncertain: "仍未验证", ruled: "已排除", nextStep: "最小下一步",
     currentGoalHint: "接下来要完成的目标",
@@ -80,10 +80,10 @@ const copy = {
     study: "Student Research Framing & Recovery Study", consent: "I have read the information and agree to participate",
     anonymous: "Research session ID", enter: "Start study", language: "Interface language",
     pretitle: "A few questions about your experience", next: "Continue", back: "Back",
-    materials: "Materials", chat: "AI assistant", memo: "Workspace", recovery: "Reasoning recovery",
+    materials: "Materials", chat: "AI assistant", memo: "Analysis/decision memo", recovery: "Reasoning recovery",
     day: "Resume", saved: "Saved", help: "Help", progress: "Reading progress",
     ask: "Ask the AI assistant…", disclaimer: "AI can make mistakes. Check important claims against the evidence.",
-    memoPlaceholder: "Continue your research problem, findings, and study plan…", words: "words",
+    memoPlaceholder: "Write your current analysis/decision memo…", words: "words",
     resume: "Resume brief", cards: "Reasoning cards", network: "Knowledge network", relations: "Relation list",
     currentGoal: "Current goal", position: "Reasoning position", uncertain: "Still uncertain", ruled: "Ruled out", nextStep: "Next step",
     currentGoalHint: "The goal you still need to finish next",
@@ -296,6 +296,7 @@ function TaskBrief({locale,taskId,setScreen}:{locale:Locale;taskId:ResearchTaskI
     <Badge variant="secondary" className="rounded-full text-primary">{task.label[locale]}</Badge>
     <p className="mt-5 text-lg font-semibold leading-8">{task.question[locale]}</p>
     <p className="mt-4 rounded-xl bg-secondary/55 p-4 text-sm leading-7 text-secondary-foreground">{task.overview[locale]}</p>
+    <p className="mt-4 text-sm font-medium leading-7">{locale==="zh-CN"?"请撰写你的当前分析/决策 memo。":"Write your current analysis/decision memo."}</p>
     <div className="mt-6">
       <h2 className="text-sm font-semibold">{locale==="zh-CN"?"第一阶段包含 3 个目标，每个目标有多个评价点：":"Phase 1 contains three goals, each with multiple evaluation criteria:"}</h2>
       <div className="mt-3 space-y-3">{task.phaseOneGoals.map((goal,index)=><section key={goal.id} className="rounded-xl border bg-white p-4">
@@ -513,13 +514,13 @@ function Brand(){return <div className="flex items-center gap-3"><div className=
 function WorkspaceTour({locale,onComplete}:{locale:Locale;onComplete:()=>void}) {
   const zhSteps:{target:string;title:string;body:string}[]=[
     {target:"materials",title:"先阅读实验材料",body:"这里是当前任务的证据与约束材料。点击不同材料查看全文，系统会记录阅读进度。"},
-    {target:"memo",title:"在工作区记录思考",body:"中间的工作区用于写下候选框架、假设、不确定点和排除方向。内容会持续保存；拖动两侧的竖向分隔条可调整各列宽度。"},
+    {target:"memo",title:"撰写分析/决策 memo",body:"请在中间区域撰写你的当前分析/决策 memo。内容会持续保存；拖动两侧的竖向分隔条可调整各列宽度。"},
     {target:"goals",title:"检查右上角目标",body:"右上角用于逐项核对第一阶段目标。目标内容可独立上下滚动。"},
     {target:"chat",title:"与 AI 比较问题框架",body:"请要求 AI 引用材料编号，并区分证据、推断和仍需验证的假设。"},
   ];
   const enSteps:{target:string;title:string;body:string}[]=[
     {target:"materials",title:"Read the evidence first",body:"These sources describe the current task evidence and constraints. Open each one to read it; reading progress is recorded."},
-    {target:"memo",title:"Record reasoning in the workspace",body:"Use the central workspace for candidate framings, hypotheses, uncertainties, and rejected directions. Its content is continuously saved; drag either vertical divider to resize the columns."},
+    {target:"memo",title:"Write an analysis/decision memo",body:"Use the central area to write your current analysis/decision memo. Its content is continuously saved; drag either vertical divider to resize the columns."},
     {target:"goals",title:"Check the upper-right goals",body:"Use the upper-right window to check Phase 1 requirements. Its content scrolls independently."},
     {target:"chat",title:"Compare framings with AI",body:"Ask the AI to cite source IDs and distinguish evidence, inference, and unverified assumptions."},
   ];
@@ -885,7 +886,7 @@ function ContinuationPanel({locale,taskId,remaining,testMode,setScreen,t}:{local
   return <RecoveryShell t={t}>
     <div className="mx-6 mt-4 min-h-0 flex-1 overflow-auto rounded-xl border bg-white p-5 text-sm leading-6 text-muted-foreground">
       <p className="text-xs font-semibold uppercase tracking-wider text-primary">{locale==="zh-CN"?"继续研究":"Continue the task"}</p>
-      <p className="mt-3">{locale==="zh-CN"?"中断已经结束。材料面板中新增了一份证据，请据此继续完成并修改你的备忘录。":"The interruption has ended. A new source has been added to the materials panel; continue and revise your memo accordingly."}</p>
+      <p className="mt-3">{locale==="zh-CN"?"中断已经结束。材料面板中新增了一份证据，请据此继续完成并修改你的分析/决策 memo。":"The interruption has ended. A new source has been added to the materials panel; continue and revise your analysis/decision memo accordingly."}</p>
       <p className="mt-3 font-medium text-foreground">{task.recoveryMaterial.title[locale]}</p>
     </div>
     <PrimaryContinue locale={locale} remaining={remaining} testMode={testMode} setScreen={setScreen} t={t}/>
