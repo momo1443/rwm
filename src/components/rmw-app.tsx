@@ -43,9 +43,9 @@ import {
 
 type Screen = "landing" | "brief" | "survey" | "work" | "city_t1" | "checkpoint" | "interruption" | "city_t2" | "workspace" | "post_survey" | "complete";
 type ChatMessage = { role: "user" | "assistant"; text: string };
-// Single-protocol characterization study: Work Period 15 min, Continuation (post-D6) 10 min.
+// Single-protocol characterization study: Work Period 15 min, Continuation (post-D6) 5 min.
 const WORK_PHASE_DURATION_SECONDS = 900;
-const RECOVERY_PHASE_DURATION_SECONDS = 600;
+const RECOVERY_PHASE_DURATION_SECONDS = 300;
 
 const copy = {
   "zh-CN": {

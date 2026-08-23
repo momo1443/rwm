@@ -31,8 +31,8 @@ const stageCopy: Record<RecoveryProbeStage, Record<Locale, { eyebrow: string; ti
     en: { eyebrow: "T1 · Pre-interruption baseline", title: "Record the current reasoning position", description: "Answer from the judgment you just formed.", action: "Save T1 and continue" },
   },
   t2: {
-    "zh-CN": { eyebrow: "T2 · 中断后无辅助", title: "仅凭记忆恢复推理位置", description: "此时尚未显示任何恢复支持。请不要返回材料或工作区，只凭记忆作答。", action: "提交 T2 并查看恢复支持" },
-    en: { eyebrow: "T2 · Unsupported recovery", title: "Recover the reasoning position from memory", description: "No recovery support is visible yet. Do not return to the materials or workspace.", action: "Submit T2 and view support" },
+    "zh-CN": { eyebrow: "T2 · 中断后无辅助", title: "仅凭记忆恢复推理位置", description: "此时尚未显示任何恢复支持。请不要返回材料或工作区，只凭记忆作答。如果确实不记得某一项，请直接写“不记得”，不要凭空编造或照搬题干。", action: "提交 T2 并继续研究" },
+    en: { eyebrow: "T2 · Unsupported recovery", title: "Recover the reasoning position from memory", description: "No recovery support is visible yet. Do not return to the materials or workspace. If you genuinely do not remember an item, write “I don't remember” — do not guess or restate the prompt.", action: "Submit T2 and continue" },
   },
   t3: {
     "zh-CN": { eyebrow: "T3 · 支持后恢复", title: "记录恢复支持后的推理位置", description: "请根据刚刚看到的恢复支持，还原中断前的推理位置。新增证据将在提交后开放。", action: "提交 T3 并继续研究" },
