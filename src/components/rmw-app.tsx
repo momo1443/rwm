@@ -327,7 +327,6 @@ function TaskBrief({locale,taskId,setScreen}:{locale:Locale;taskId:ResearchTaskI
     <Badge variant="secondary" className="rounded-full text-primary">{task.label[locale]}</Badge>
     <p className="mt-5 text-lg font-semibold leading-8">{task.question[locale]}</p>
     <p className="mt-4 rounded-xl bg-secondary/55 p-4 text-sm leading-7 text-secondary-foreground">{task.overview[locale]}</p>
-    <p className="mt-4 text-sm font-medium leading-7">{locale==="zh-CN"?"请撰写你的当前分析/决策 memo。":"Write your current analysis/decision memo."}</p>
     <div className="mt-6">
       <h2 className="text-sm font-semibold">{locale==="zh-CN"?"第一阶段包含 3 个目标，每个目标有多个评价点：":"Phase 1 contains three goals, each with multiple evaluation criteria:"}</h2>
       <div className="mt-3 space-y-3">{task.phaseOneGoals.map((goal,index)=><section key={goal.id} className="rounded-xl border bg-white p-4">
