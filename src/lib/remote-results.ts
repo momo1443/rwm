@@ -159,11 +159,11 @@ export async function completeRemoteStudy(input: Pick<Snapshot, "memo" | "chat" 
   return queueFlush(sessionId, true);
 }
 
-export async function resumePendingCompletedStudy() {
+export async function resumePendingCompletedStudy(completionRecorded = false) {
   if (typeof window === "undefined") return false;
   const sessionId = activeSessionId();
   if (!sessionId || sessionStorage.getItem(TOKEN_SESSION_KEY) !== sessionId) return false;
   const snapshot = readObject<Snapshot>(storageKey(SNAPSHOT_OUTBOX_PREFIX, sessionId), {});
-  if (!hasCompletedPostSurvey(snapshot)) return false;
+  if (!Object.keys(snapshot).length || (!completionRecorded && !hasCompletedPostSurvey(snapshot))) return false;
   return queueFlush(sessionId, true);
 }

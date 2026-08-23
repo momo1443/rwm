@@ -140,7 +140,8 @@ export function RmwApp() {
       if (view === "work") setScreen("work");
       if (view === "city-t1") setScreen("city_t1");
       if (view === "city-t2") setScreen("city_t2");
-      void resumePendingCompletedStudy().then((saved) => {
+      const completionRecorded = readStudyEvents().some((event) => event.type === "recovery_post_survey_submitted");
+      void resumePendingCompletedStudy(completionRecorded).then((saved) => {
         if (!saved) return;
         setCompletionStatus("saved");
         setScreen("complete");
