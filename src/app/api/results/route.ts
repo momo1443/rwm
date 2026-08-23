@@ -1,7 +1,6 @@
-import { randomInt } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { createParticipant, findSession, readAllResults, resultStorageMode, saveResultEvents, updateParticipant } from "@/lib/result-store";
+import { createParticipant, findSession, resultStorageMode, saveResultEvents, updateParticipant } from "@/lib/result-store";
 import { getParticipantSessionSecret } from "@/lib/results-server";
 import { createSignedToken, verifySignedToken } from "@/lib/signed-token";
 import { researchTaskIds } from "@/lib/research-task";
@@ -135,7 +134,7 @@ const requestSchema = z.discriminatedUnion("action", [
     locale: z.enum(["zh-CN", "en"]),
     condition: z.enum(["rmw", "rmw_no_summary", "summary_only"]),
     taskId: z.enum(researchTaskIds),
-    assignmentMode: z.enum(["auto", "manual", "manual_condition"]),
+    assignmentMode: z.enum(["manual", "manual_condition"]),
     token: z.string().min(1).max(2000).optional(),
   }),
   z.object({ action: z.literal("event"), token: z.string().min(1).max(2000), event: eventSchema }),
@@ -167,33 +166,11 @@ async function participantFromToken(token: string, secret: string) {
   return {
     participantCode: payload.participantCode,
     sessionId: payload.sessionId,
-    assignmentMode: payload.assignmentMode === "auto"
-      ? "auto" as const
-      : payload.assignmentMode === "manual_condition"
-        ? "manual_condition" as const
-        : "manual" as const,
+    assignmentMode: payload.assignmentMode === "manual_condition" ? "manual_condition" as const : "manual" as const,
   };
 }
 
 const activeConditions = ["rmw", "rmw_no_summary", "summary_only"] as const;
-
-async function balancedConditionAssignment() {
-  const database = await readAllResults();
-  const activeCutoff = Date.now() - 12 * 60 * 60 * 1000;
-  const rows = database.results.filter((result) => {
-    if (result.analysis_status === "trashed" || !activeConditions.includes(result.condition as typeof activeConditions[number])) return false;
-    const assessment = result.task_assessment && typeof result.task_assessment === "object" && "version" in result.task_assessment
-      ? result.task_assessment as { version?: unknown }
-      : null;
-    const currentCompleted = result.status === "completed" && assessment?.version === "reasoning-recovery-v3-three-arm";
-    const currentActive = result.status === "started" && new Date(result.created_at).getTime() >= activeCutoff;
-    return currentCompleted || currentActive;
-  });
-  const counts = activeConditions.map((condition) => ({ condition, count: rows.filter((row) => row.condition === condition).length }));
-  const minimum = Math.min(...counts.map((entry) => entry.count));
-  const leastFilled = counts.filter((entry) => entry.count === minimum);
-  return leastFilled[randomInt(leastFilled.length)].condition;
-}
 
 export async function POST(request: Request) {
   const contentLength = Number(request.headers.get("content-length") || 0);
@@ -225,7 +202,6 @@ export async function POST(request: Request) {
         taskId = existing.task_id as typeof taskId;
         assignmentMode = resumedSession.assignmentMode;
       } else {
-        if (assignmentMode === "auto") condition = await balancedConditionAssignment();
         taskId = "city_policy";
         await createParticipant({ sessionId, participantCode, locale, condition, taskId });
       }

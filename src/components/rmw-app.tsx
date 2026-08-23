@@ -170,14 +170,14 @@ export function RmwApp() {
         <div className="max-w-md"><SquaresFour size={42} className="mx-auto mb-5 text-primary" /><h1 className="text-2xl font-semibold">{t.desktop}</h1><p className="mt-3 text-muted-foreground">{t.desktopText}</p></div>
       </div>
       <main className="desktop-app min-h-screen">
-        {screen === "landing" && <Landing locale={locale} setLocale={setLocale} participantId={participantId} startError={startError} onStart={async () => {
+        {screen === "landing" && <Landing locale={locale} setLocale={setLocale} participantId={participantId} initialCondition={testMode ? condition : null} startError={startError} onStart={async (chosenCondition) => {
           if (startingRef.current) return;
           startingRef.current = true;
           setStartError("");
           try {
             const sessionId = beginStudySession();
-            const requestedCondition: Condition = condition;
-            const assignmentMode = testMode ? "manual" : "auto";
+            const requestedCondition: Condition = chosenCondition;
+            const assignmentMode = testMode ? "manual" : "manual_condition";
             const assignment = await startRemoteStudySession({ sessionId, participantCode: participantId, locale, condition: requestedCondition, taskId, assignmentMode });
             if (!assignment || !isResearchTaskId(assignment.taskId) || !["rmw", "rmw_no_summary", "summary_only"].includes(assignment.condition)) {
               setStartError(locale === "zh-CN" ? "无法创建本次运行，请检查网络后重试。" : "Could not create this study run. Check your connection and try again.");
@@ -195,7 +195,7 @@ export function RmwApp() {
             setProblemState(null);
             setRecoveryAssessment(createRecoveryAssessment(assignedTaskId, sessionId));
             saveProblemStateSnapshot(null);
-            eventLog("research_task_started", { taskId: assignedTaskId, assignment: assignmentMode === "manual" ? "manual_test" : "balanced_three_condition", protocolVersion: "reasoning-recovery-v3-three-arm", participantId, condition: assignedCondition }, { stage: "task_setup" });
+            eventLog("research_task_started", { taskId: assignedTaskId, assignment: assignmentMode === "manual" ? "manual_test" : "participant_selected_condition", protocolVersion: "reasoning-recovery-v3-three-arm", participantId, condition: assignedCondition }, { stage: "task_setup" });
             setScreen("brief");
           } finally {
             startingRef.current = false;
@@ -277,6 +277,7 @@ function Landing({
   locale,
   setLocale,
   participantId,
+  initialCondition,
   startError,
   onStart,
   t,
@@ -284,11 +285,13 @@ function Landing({
   locale: Locale;
   setLocale: (l: Locale) => void;
   participantId: string;
+  initialCondition: Condition | null;
   startError: string;
-  onStart: () => Promise<void>;
+  onStart: (condition: Condition) => Promise<void>;
   t: typeof copy[Locale];
 }) {
   const [consent, setConsent] = useState(false);
+  const [conditionChoice, setConditionChoice] = useState<Condition | null>(initialCondition);
   const [submitting, setSubmitting] = useState(false);
   return <div className="min-h-screen bg-[#f8f7f3]">
     <header className="mx-auto flex h-20 max-w-6xl items-center justify-between px-8"><Brand /><LanguageChoice locale={locale} setLocale={setLocale} /></header>
@@ -298,9 +301,19 @@ function Landing({
         <label className="text-sm font-semibold" htmlFor="anonymous-id">{t.anonymous}</label>
         <div id="anonymous-id" className="mt-3 rounded-xl border bg-muted/35 px-4 py-3 font-mono text-base font-semibold tracking-wider text-primary">{participantId || (locale==="zh-CN"?"正在生成…":"Generating…")}</div>
         <p className="mt-2 text-xs text-muted-foreground">{locale==="zh-CN"?"编号由系统自动生成，无需填写。":"Generated automatically; no entry is required."}</p>
-        <p className="mt-5 text-xs leading-5 text-muted-foreground">{locale==="zh-CN"?"所有参与者完成相同任务与中断；系统会随机分配一种中断后恢复方式。":"All participants complete the same task and interruption; one post-interruption recovery method is assigned at random."}</p>
+        <fieldset className="mt-7">
+          <legend className="text-sm font-semibold">{locale==="zh-CN"?"选择实验方式":"Choose a study method"}</legend>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">{locale==="zh-CN"?"请选择一种方式。你的选择会直接用于本次研究，不会被系统随机更改。":"Choose one method. Your selection will be used directly and will not be randomized."}</p>
+          <div className="mt-3 grid gap-2">
+            {([
+              {value:"rmw",zh:"方式一",en:"Method 1"},
+              {value:"rmw_no_summary",zh:"方式二",en:"Method 2"},
+              {value:"summary_only",zh:"方式三",en:"Method 3"},
+            ] as const).map((option)=><label key={option.value} className={`cursor-pointer rounded-xl border px-3 py-3 text-sm transition ${conditionChoice===option.value?"border-primary bg-secondary/65 text-primary":"bg-white hover:border-primary/45"}`}><input type="radio" name="condition" value={option.value} checked={conditionChoice===option.value} onChange={()=>setConditionChoice(option.value)} className="mr-2 accent-[var(--primary)]"/>{locale==="zh-CN"?option.zh:option.en}</label>)}
+          </div>
+        </fieldset>
         <label className="mt-7 flex cursor-pointer items-start gap-3 text-sm leading-6"><input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)} className="mt-1 size-4 accent-[var(--primary)]"/><span>{t.consent}</span></label>
-        <TimedButton seconds={5} ready={consent&&Boolean(participantId)&&!submitting} locale={locale} label={t.enter} blockedLabel={submitting?(locale==="zh-CN"?"正在创建本次运行…":"Setting up your session…"):(locale==="zh-CN"?"请勾选同意":"Provide consent to continue")} onClick={()=>{if(submitting)return;setSubmitting(true);onStart().finally(()=>setSubmitting(false));}} className="mt-7 h-12 w-full" />
+        <TimedButton seconds={5} ready={consent&&Boolean(participantId)&&Boolean(conditionChoice)&&!submitting} locale={locale} label={t.enter} blockedLabel={submitting?(locale==="zh-CN"?"正在创建本次运行…":"Setting up your session…"):!conditionChoice?(locale==="zh-CN"?"请先选择实验方式":"Choose a method first"):(locale==="zh-CN"?"请勾选同意":"Provide consent to continue")} onClick={()=>{if(!conditionChoice||submitting)return;setSubmitting(true);onStart(conditionChoice).finally(()=>setSubmitting(false));}} className="mt-7 h-12 w-full" />
         {startError && <p role="alert" className="mt-3 text-center text-xs text-destructive">{startError}</p>}
         <p className="mt-3 text-center text-[11px] text-muted-foreground">{locale==="zh-CN"?"按钮将在阅读时间结束且信息完整后开放。":"The button unlocks after the reading time and required fields are complete."}</p>
       </div>
