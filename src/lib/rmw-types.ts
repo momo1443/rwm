@@ -1,8 +1,6 @@
-// Single-protocol characterization study: every participant runs the same
-// condition. The literal-union (rather than a plain string) lets the
-// compiler flag any leftover branch that still checks for a retired
-// condition value.
-export type Condition = "rmw";
+// Current three-arm recovery study. Historical condition names remain in the
+// database only and are not valid for new participant sessions.
+export type Condition = "rmw" | "rmw_no_summary" | "summary_only";
 export type Locale = "zh-CN" | "en";
 export type CardType = "goal" | "hypothesis" | "evidence" | "constraint" | "path" | "next_action";
 export type GoalLevel = "main" | "subgoal" | "suspended";

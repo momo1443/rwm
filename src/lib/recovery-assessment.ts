@@ -3,7 +3,7 @@ import type { ResearchTaskId } from "./research-task";
 
 export const reasoningRecallDimensions = ["goal", "position", "constraint", "rejectedPath", "uncertainty", "nextAction"] as const;
 export type ReasoningRecallDimension = typeof reasoningRecallDimensions[number];
-export type RecoveryProbeStage = "t1" | "t2";
+export type RecoveryProbeStage = "t1" | "t2" | "t3";
 export type RecallForm = "A" | "B";
 
 export type RecoveryProbe = {
@@ -19,6 +19,13 @@ export type FrozenTrace = {
   memoLength: number;
   chatTurnCount: number;
   materialIds: string[];
+};
+
+export type RecoveryReadiness = {
+  supportRenderedAt: string;
+  readyAt: string;
+  latencyMs: number;
+  viewedSections: string[];
 };
 
 // Post-task survey. Five adapted subscales — see docs/post-task-survey-references.md
@@ -66,11 +73,12 @@ export const postTaskSurveyItems: PostTaskSurveyItem[] = [
 export type RecoveryPostSurvey = Record<PostTaskSurveyItemKey, number>;
 
 export type RecoveryAssessment = {
-  version: "reasoning-trace-gap-v1";
+  version: "reasoning-recovery-v3-three-arm";
   taskId: ResearchTaskId;
   formOrder: "AB" | "BA";
   probes: Partial<Record<RecoveryProbeStage, RecoveryProbe>>;
   frozenTrace?: FrozenTrace;
+  readiness?: RecoveryReadiness;
   postSurvey?: RecoveryPostSurvey;
 };
 
@@ -122,7 +130,7 @@ export function getContentRecallPrompts(form: RecallForm, locale: Locale) {
 export function createRecoveryAssessment(taskId: ResearchTaskId, sessionId = "0"): RecoveryAssessment {
   const lastHex = sessionId.replaceAll("-", "").at(-1) || "0";
   return {
-    version: "reasoning-trace-gap-v1",
+    version: "reasoning-recovery-v3-three-arm",
     taskId,
     formOrder: Number.parseInt(lastHex, 16) % 2 === 0 ? "AB" : "BA",
     probes: {},
@@ -135,7 +143,7 @@ export function withRecoveryProbe(assessment: RecoveryAssessment, stage: Recover
 
 export function recoveryAssessmentEventPayload(stage: RecoveryProbeStage, probe: RecoveryProbe) {
   return {
-    version: "reasoning-trace-gap-v1",
+    version: "reasoning-recovery-v3-three-arm",
     stage,
     form: probe.form,
     reasoningAnswered: reasoningRecallDimensions.filter((dimension) => probe.reasoning[dimension].trim()).length,

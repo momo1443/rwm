@@ -31,8 +31,9 @@ import {
   type ResearchTaskId,
 } from "@/lib/research-task";
 import type { CardRelation, Condition, Locale, ProblemStateSnapshot, ReasoningCard } from "@/lib/rmw-types";
-import { InterruptionTask } from "@/components/rmw-checkpoint";
+import { InterruptionTask, RmwCheckpoint } from "@/components/rmw-checkpoint";
 import { RecoveryProbePage } from "@/components/recovery-probe";
+import { RecoverySupportPage } from "@/components/recovery-support";
 import { TimedButton } from "@/components/timed-button";
 import {
   createRecoveryAssessment,
@@ -46,10 +47,10 @@ import {
   type RecoveryPostSurvey,
 } from "@/lib/recovery-assessment";
 
-type Screen = "landing" | "brief" | "survey" | "work" | "city_t1" | "interruption" | "city_t2" | "workspace" | "post_survey" | "complete";
+type Screen = "landing" | "brief" | "survey" | "work" | "city_t1" | "checkpoint" | "interruption" | "city_t2" | "city_support" | "city_t3" | "workspace" | "post_survey" | "complete";
 type ChatMessage = { role: "user" | "assistant"; text: string };
-// Single-protocol characterization study: Work 15 min, complete two
-// interruption games, then a 10-minute D6 continuation.
+// Three recovery conditions share the same 15-minute work period, T1/T2
+// 6-reasoning + 6-content probes, interruption, T3, and D6 continuation.
 const WORK_PHASE_DURATION_SECONDS = 900;
 const RECOVERY_PHASE_DURATION_SECONDS = 600;
 
@@ -119,12 +120,14 @@ export function RmwApp() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const view = params.get("view");
+    const requestedCondition = params.get("condition");
     const task = params.get("task");
     const lang = params.get("lang") as Locale | null;
     const frame = requestAnimationFrame(() => {
       setParticipantId(getOrCreateParticipantId());
       setTestMode(params.get("test") === "1");
       if (lang === "en" || lang === "zh-CN") setLocale(lang);
+      if (requestedCondition === "rmw" || requestedCondition === "rmw_no_summary" || requestedCondition === "summary_only") setCondition(requestedCondition);
       if (isResearchTaskId(task)) {
         const selectedTask=getResearchTask(task);
         const selectedLocale=lang==="en"||lang==="zh-CN"?lang:"zh-CN";
@@ -132,7 +135,6 @@ export function RmwApp() {
         setMemo(selectedTask.starterMemo[selectedLocale]);
         setChat([{role:"assistant",text:selectedTask.assistantIntro[selectedLocale]}]);
       }
-      if (view === "checkpoint") setScreen("city_t1");
       if (view === "interruption") setScreen("interruption");
       if (view === "recovery") setScreen("workspace");
       if (view === "recall") setScreen("city_t2");
@@ -140,6 +142,9 @@ export function RmwApp() {
       if (view === "work") setScreen("work");
       if (view === "city-t1") setScreen("city_t1");
       if (view === "city-t2") setScreen("city_t2");
+      if (view === "checkpoint") setScreen("checkpoint");
+      if (view === "city-support") setScreen("city_support");
+      if (view === "city-t3") setScreen("city_t3");
       const completionRecorded = readStudyEvents().some((event) => event.type === "recovery_post_survey_submitted");
       void resumePendingCompletedStudy(completionRecorded).then((saved) => {
         if (!saved) return;
@@ -171,14 +176,10 @@ export function RmwApp() {
           setStartError("");
           try {
             const sessionId = beginStudySession();
-            // Single-protocol characterization study: every participant runs the
-            // same condition and the same task. assignmentMode still distinguishes
-            // a formal run ("manual_condition") from researcher review ("manual",
-            // auto-excluded from analysis) but no longer selects among conditions.
             const requestedCondition: Condition = condition;
-            const assignmentMode = testMode ? "manual" : "manual_condition";
+            const assignmentMode = testMode ? "manual" : "auto";
             const assignment = await startRemoteStudySession({ sessionId, participantCode: participantId, locale, condition: requestedCondition, taskId, assignmentMode });
-            if (!assignment || !isResearchTaskId(assignment.taskId) || assignment.condition !== "rmw") {
+            if (!assignment || !isResearchTaskId(assignment.taskId) || !["rmw", "rmw_no_summary", "summary_only"].includes(assignment.condition)) {
               setStartError(locale === "zh-CN" ? "无法创建本次运行，请检查网络后重试。" : "Could not create this study run. Check your connection and try again.");
               return;
             }
@@ -190,11 +191,11 @@ export function RmwApp() {
             eventLog("consent_submitted", { locale, access: "anonymous", participantId, condition: assignedCondition }, { stage: "consent" });
             setCompletionStatus("saving");
             setMemo(task.starterMemo[locale]);
-            setChat([{ role: "assistant", text: task.assistantIntro[locale] }]);
+            setChat(assignedCondition === "rmw_no_summary" ? [] : [{ role: "assistant", text: task.assistantIntro[locale] }]);
             setProblemState(null);
             setRecoveryAssessment(createRecoveryAssessment(assignedTaskId, sessionId));
             saveProblemStateSnapshot(null);
-            eventLog("research_task_started", { taskId: assignedTaskId, assignment: assignmentMode === "manual" ? "manual_test" : "formal_single_protocol", protocolVersion: "reasoning-trace-gap-v1", participantId, condition: assignedCondition }, { stage: "task_setup" });
+            eventLog("research_task_started", { taskId: assignedTaskId, assignment: assignmentMode === "manual" ? "manual_test" : "balanced_three_condition", protocolVersion: "reasoning-recovery-v3-three-arm", participantId, condition: assignedCondition }, { stage: "task_setup" });
             setScreen("brief");
           } finally {
             startingRef.current = false;
@@ -222,6 +223,11 @@ export function RmwApp() {
           setRecoveryAssessment(next);
           saveRemoteStudySnapshot({ taskAssessment: next });
           eventLog("recovery_probe_submitted", recoveryAssessmentEventPayload("t1", probe), { stage: "pre_interruption_assessment", targetType: "recall_probe", targetId: `${taskId}_t1` });
+          setScreen("checkpoint");
+        }} />}
+        {screen === "checkpoint" && <RmwCheckpoint locale={locale} condition={condition} taskId={taskId} memo={memo} messages={chat} testMode={testMode} onBack={() => setScreen("work")} onContinue={(snapshot) => {
+          if (snapshot) { setProblemState(snapshot); saveProblemStateSnapshot(snapshot); }
+          saveRemoteStudySnapshot({ memo, chat, ...(snapshot && { problemState: snapshot }), taskAssessment: recoveryAssessment });
           setScreen("interruption");
         }} />}
         {screen === "interruption" && <InterruptionTask locale={locale} fastMode={testMode} onComplete={() => setScreen("city_t2")} />}
@@ -230,9 +236,21 @@ export function RmwApp() {
           setRecoveryAssessment(next);
           saveRemoteStudySnapshot({ taskAssessment: next, recall: probe.reasoning });
           eventLog("recovery_probe_submitted", recoveryAssessmentEventPayload("t2", probe), { stage: "unsupported_recovery_assessment", targetType: "recall_probe", targetId: `${taskId}_t2` });
-          // Single-protocol design: no recovery support is ever shown. T2 is
-          // followed directly by the D6 continuation phase.
-          eventLog("recovery_new_evidence_unlocked", { taskId, afterProbe: "t2" }, { stage: "recovery", targetType: "material", targetId: getResearchTask(taskId).recoveryMaterial.id });
+          eventLog("recovery_support_revealed", { condition, taskId, purpose: "supported_t3" }, { stage: "recovery_assessment", targetType: "recovery_support", targetId: condition });
+          setScreen("city_support");
+        }} />}
+        {screen === "city_support" && <RecoverySupportPage locale={locale} condition={condition} taskId={taskId} problemState={problemState} participantMemo={memo} testMode={testMode} onContinue={(readiness) => {
+          const next = { ...recoveryAssessment, readiness };
+          setRecoveryAssessment(next);
+          saveRemoteStudySnapshot({ taskAssessment: next });
+          setScreen("city_t3");
+        }} />}
+        {screen === "city_t3" && <RecoveryProbePage locale={locale} stage="t3" assessment={recoveryAssessment} onSubmit={(probe) => {
+          const next = withRecoveryProbe(recoveryAssessment, "t3", probe);
+          setRecoveryAssessment(next);
+          saveRemoteStudySnapshot({ taskAssessment: next });
+          eventLog("recovery_probe_submitted", recoveryAssessmentEventPayload("t3", probe), { stage: "supported_recovery_assessment", targetType: "recall_probe", targetId: `${taskId}_t3` });
+          eventLog("recovery_new_evidence_unlocked", { taskId, afterProbe: "t3" }, { stage: "recovery", targetType: "material", targetId: getResearchTask(taskId).recoveryMaterial.id });
           setScreen("workspace");
         }} />}
         {screen === "workspace" && <Workspace key={`recovery-${taskId}-${locale}`} locale={locale} condition={condition} taskId={taskId} phase="recovery" problemState={problemState} memo={memo} setMemo={setMemo} chat={chat} setChat={setChat} setScreen={setScreen} testMode={testMode} t={t} />}
@@ -280,7 +298,7 @@ function Landing({
         <label className="text-sm font-semibold" htmlFor="anonymous-id">{t.anonymous}</label>
         <div id="anonymous-id" className="mt-3 rounded-xl border bg-muted/35 px-4 py-3 font-mono text-base font-semibold tracking-wider text-primary">{participantId || (locale==="zh-CN"?"正在生成…":"Generating…")}</div>
         <p className="mt-2 text-xs text-muted-foreground">{locale==="zh-CN"?"编号由系统自动生成，无需填写。":"Generated automatically; no entry is required."}</p>
-        <p className="mt-5 text-xs leading-5 text-muted-foreground">{locale==="zh-CN"?"本研究为单一流程：所有参与者完成相同的任务、相同的中断，且中断后不会获得任何恢复支持。":"This study runs a single protocol: every participant completes the same task and the same interruption, and receives no recovery support afterward."}</p>
+        <p className="mt-5 text-xs leading-5 text-muted-foreground">{locale==="zh-CN"?"所有参与者完成相同任务与中断；系统会随机分配一种中断后恢复方式。":"All participants complete the same task and interruption; one post-interruption recovery method is assigned at random."}</p>
         <label className="mt-7 flex cursor-pointer items-start gap-3 text-sm leading-6"><input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)} className="mt-1 size-4 accent-[var(--primary)]"/><span>{t.consent}</span></label>
         <TimedButton seconds={5} ready={consent&&Boolean(participantId)&&!submitting} locale={locale} label={t.enter} blockedLabel={submitting?(locale==="zh-CN"?"正在创建本次运行…":"Setting up your session…"):(locale==="zh-CN"?"请勾选同意":"Provide consent to continue")} onClick={()=>{if(submitting)return;setSubmitting(true);onStart().finally(()=>setSubmitting(false));}} className="mt-7 h-12 w-full" />
         {startError && <p role="alert" className="mt-3 text-center text-xs text-destructive">{startError}</p>}
@@ -606,6 +624,7 @@ function Workspace({
   const timerExpiredLoggedRef=useRef(false);
   const onPhaseOneCaptureRef=useRef(onPhaseOneCapture);
   const centerColumnRatio=100-leftColumnRatio-rightColumnRatio;
+  const chatDisabled=condition==="rmw_no_summary";
   const timerText=`${String(Math.floor(remainingSeconds/60)).padStart(2,"0")}:${String(remainingSeconds%60).padStart(2,"0")}`;
 
   useEffect(()=>{
@@ -667,7 +686,7 @@ function Workspace({
   };
   const send=async()=>{
     const userText=message.trim();
-    if(!userText||isLoading)return;
+    if(!userText||isLoading||chatDisabled)return;
     const history:ChatMessage[]=[...chat,{role:"user",text:userText}];
     setChat(history);
     setMessage("");
@@ -756,7 +775,7 @@ function Workspace({
         >
           <span className="h-1 w-12 rounded-full bg-border transition group-hover:bg-primary/45"/>
         </button>
-        <ChatPanel locale={locale} chat={chat} message={message} setMessage={setMessage} send={send} isLoading={isLoading} error={chatError} t={t}/>
+        <ChatPanel locale={locale} chat={chat} message={message} setMessage={setMessage} send={send} isLoading={isLoading} error={chatError} disabled={chatDisabled} t={t}/>
       </section>
     </div>
     {showTour&&<WorkspaceTour locale={locale} onComplete={()=>setShowTour(false)}/>}

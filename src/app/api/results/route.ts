@@ -1,6 +1,7 @@
+import { randomInt } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { createParticipant, findSession, resultStorageMode, saveResultEvents, updateParticipant } from "@/lib/result-store";
+import { createParticipant, findSession, readAllResults, resultStorageMode, saveResultEvents, updateParticipant } from "@/lib/result-store";
 import { getParticipantSessionSecret } from "@/lib/results-server";
 import { createSignedToken, verifySignedToken } from "@/lib/signed-token";
 import { researchTaskIds } from "@/lib/research-task";
@@ -52,6 +53,32 @@ const characterizationAssessmentSchema = z.object({
   }).strict().optional(),
   postSurvey: postSurveySchema.optional(),
 }).strict();
+const supportedRecoveryProbeSchema = z.object({
+  reasoning: reasoningAnswersSchema,
+  content: z.array(z.string()).length(0),
+  form: z.enum(["A", "B"]),
+  submittedAt: z.string().datetime(),
+}).strict();
+const threeArmAssessmentSchema = z.object({
+  version: z.literal("reasoning-recovery-v3-three-arm"),
+  taskId: z.literal("city_policy"),
+  formOrder: z.enum(["AB", "BA"]),
+  probes: z.object({ t1: recoveryProbeSchema.optional(), t2: recoveryProbeSchema.optional(), t3: supportedRecoveryProbeSchema.optional() }).strict(),
+  frozenTrace: z.object({
+    capturedAt: z.string().datetime(),
+    cutoffSequenceNumber: z.number().int().nonnegative(),
+    memoLength: z.number().int().nonnegative().max(20000),
+    chatTurnCount: z.number().int().nonnegative().max(60),
+    materialIds: z.array(z.string().min(1).max(100)).max(10),
+  }).strict().optional(),
+  readiness: z.object({
+    supportRenderedAt: z.string().datetime(),
+    readyAt: z.string().datetime(),
+    latencyMs: z.number().int().nonnegative().max(60 * 60 * 1000),
+    viewedSections: z.array(z.string().min(1).max(100)).max(20),
+  }).strict().optional(),
+  postSurvey: postSurveySchema.optional(),
+}).strict();
 const legacyRecoveryProbeSchema = z.object({
   reasoning: reasoningAnswersSchema,
   content: z.array(z.string().trim().min(1).max(2000)).max(6).optional(),
@@ -72,7 +99,7 @@ const legacyRecoveryAssessmentSchema = z.object({
   }).strict().optional(),
   postSurvey: z.record(z.string(), z.number().int().min(1).max(7)).optional(),
 }).strict();
-const recoveryAssessmentSchema = z.union([characterizationAssessmentSchema, legacyRecoveryAssessmentSchema]);
+const recoveryAssessmentSchema = z.union([characterizationAssessmentSchema, threeArmAssessmentSchema, legacyRecoveryAssessmentSchema]);
 const snapshotSchema = z.object({
   preSurvey: z.record(z.string(), z.number().int().min(1).max(5)).optional(),
   phaseOneMemo: z.string().max(20000).optional(),
@@ -106,9 +133,9 @@ const requestSchema = z.discriminatedUnion("action", [
     sessionId: sessionIdSchema,
     participantCode: participantCodeSchema,
     locale: z.enum(["zh-CN", "en"]),
-    condition: z.enum(["rmw"]),
+    condition: z.enum(["rmw", "rmw_no_summary", "summary_only"]),
     taskId: z.enum(researchTaskIds),
-    assignmentMode: z.enum(["manual", "manual_condition"]),
+    assignmentMode: z.enum(["auto", "manual", "manual_condition"]),
     token: z.string().min(1).max(2000).optional(),
   }),
   z.object({ action: z.literal("event"), token: z.string().min(1).max(2000), event: eventSchema }),
@@ -140,8 +167,32 @@ async function participantFromToken(token: string, secret: string) {
   return {
     participantCode: payload.participantCode,
     sessionId: payload.sessionId,
-    assignmentMode: payload.assignmentMode === "manual_condition" ? "manual_condition" as const : "manual" as const,
+    assignmentMode: payload.assignmentMode === "auto"
+      ? "auto" as const
+      : payload.assignmentMode === "manual_condition"
+        ? "manual_condition" as const
+        : "manual" as const,
   };
+}
+
+const activeConditions = ["rmw", "rmw_no_summary", "summary_only"] as const;
+
+async function balancedConditionAssignment() {
+  const database = await readAllResults();
+  const activeCutoff = Date.now() - 12 * 60 * 60 * 1000;
+  const rows = database.results.filter((result) => {
+    if (result.analysis_status === "trashed" || !activeConditions.includes(result.condition as typeof activeConditions[number])) return false;
+    const assessment = result.task_assessment && typeof result.task_assessment === "object" && "version" in result.task_assessment
+      ? result.task_assessment as { version?: unknown }
+      : null;
+    const currentCompleted = result.status === "completed" && assessment?.version === "reasoning-recovery-v3-three-arm";
+    const currentActive = result.status === "started" && new Date(result.created_at).getTime() >= activeCutoff;
+    return currentCompleted || currentActive;
+  });
+  const counts = activeConditions.map((condition) => ({ condition, count: rows.filter((row) => row.condition === condition).length }));
+  const minimum = Math.min(...counts.map((entry) => entry.count));
+  const leastFilled = counts.filter((entry) => entry.count === minimum);
+  return leastFilled[randomInt(leastFilled.length)].condition;
 }
 
 export async function POST(request: Request) {
@@ -167,11 +218,15 @@ export async function POST(request: Request) {
         if (resumedSession?.sessionId !== sessionId || resumedSession.participantCode !== participantCode) {
           return NextResponse.json({ error: "Study session is already in use" }, { status: 409 });
         }
+        if (!activeConditions.includes(existing.condition as typeof activeConditions[number])) {
+          return NextResponse.json({ error: "Study session uses a retired condition" }, { status: 409 });
+        }
         condition = existing.condition as typeof condition;
         taskId = existing.task_id as typeof taskId;
         assignmentMode = resumedSession.assignmentMode;
       } else {
-        if (assignmentMode === "manual_condition") taskId = "city_policy";
+        if (assignmentMode === "auto") condition = await balancedConditionAssignment();
+        taskId = "city_policy";
         await createParticipant({ sessionId, participantCode, locale, condition, taskId });
       }
       const token = await createSignedToken({
@@ -219,7 +274,8 @@ export async function POST(request: Request) {
     const currentAssessment = current.task_assessment && typeof current.task_assessment === "object" && "version" in current.task_assessment
       ? current.task_assessment as { version?: unknown; frozenTrace?: unknown }
       : null;
-    if (currentAssessment?.version === "reasoning-trace-gap-v1" && currentAssessment.frozenTrace && data.taskAssessment?.version === "reasoning-trace-gap-v1"
+    if ((currentAssessment?.version === "reasoning-trace-gap-v1" || currentAssessment?.version === "reasoning-recovery-v3-three-arm") && currentAssessment.frozenTrace
+      && data.taskAssessment?.version === currentAssessment.version
       && !jsonValuesEqual(data.taskAssessment.frozenTrace, currentAssessment.frozenTrace)) {
       return NextResponse.json({ error: "The frozen trace cutoff is immutable" }, { status: 409 });
     }

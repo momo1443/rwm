@@ -228,9 +228,10 @@ export function RmwCheckpoint({
     return () => controller.abort();
   }, [locale, memo, messages, taskId]);
 
-  const extractionReady = mode === "live";
+  const requiresExtraction = condition !== "rmw_no_summary";
+  const extractionReady = !requiresExtraction || mode === "live";
   const preparationReady = extractionReady;
-  const modeLabel = mode === "live" ? "DeepSeek" : mode === "loading"
+  const modeLabel = !requiresExtraction ? (locale === "zh-CN" ? "用户 memo" : "Participant memo") : mode === "live" ? "DeepSeek" : mode === "loading"
     ? (locale === "zh-CN" ? "分析中" : "Analyzing")
     : mode === "insufficient"
       ? (locale === "zh-CN" ? "未生成" : "Not generated")
@@ -289,7 +290,7 @@ export function RmwCheckpoint({
         <div className="flex items-center gap-3 text-sm"><Clock size={20} className="text-primary" /><div><p className="font-medium">{footerStatus}</p>{!testMode&&extractionReady&&remaining>0&&<div className="mt-2 flex items-center gap-3"><Progress value={((CHECKPOINT_DURATION_SECONDS-remaining)/CHECKPOINT_DURATION_SECONDS)*100} className="h-1.5 w-32" /><span className="text-xs text-muted-foreground">{formatClock(remaining)}</span></div>}</div></div>
         <div className="text-right">
           {!testMode&&earlyNotice && remaining > 0 && <p role="status" className="mb-2 text-xs text-amber-700">{t.early}</p>}
-          <Button variant={preparationReady&&(testMode||remaining === 0) ? "default" : "secondary"} disabled={mode === "loading" || (!testMode&&!preparationReady)} className="h-11 px-6" onClick={() => {
+          <Button variant={preparationReady&&(testMode||remaining === 0) ? "default" : "secondary"} disabled={(requiresExtraction && mode === "loading") || (!testMode&&!preparationReady)} className="h-11 px-6" onClick={() => {
             if (!preparationReady) {
               if (testMode) {
                 eventLog("checkpoint_skipped_in_test_mode", { taskId, reason: mode }, { stage: "checkpoint" });
@@ -302,8 +303,8 @@ export function RmwCheckpoint({
               eventLog("checkpoint_continue_blocked", { remaining }, { stage: "checkpoint" });
               return;
             }
-            eventLog("checkpoint_completed", { taskId, condition, cards, relations, preparationSeconds: CHECKPOINT_DURATION_SECONDS }, { stage: "checkpoint" });
-            onContinue({ cards, relations, capturedAt: new Date().toISOString() });
+            eventLog("checkpoint_completed", { taskId, condition, cards: requiresExtraction ? cards : [], relations: requiresExtraction ? relations : [], preparationSeconds: CHECKPOINT_DURATION_SECONDS }, { stage: "checkpoint" });
+            onContinue(requiresExtraction ? { cards, relations, capturedAt: new Date().toISOString() } : undefined);
           }}>{!preparationReady&&testMode?(locale === "zh-CN"?"仅测试模式：跳过保存":"Test mode only: skip save"):t.saveAndBreak}<ArrowRight /></Button>
         </div>
       </div>
