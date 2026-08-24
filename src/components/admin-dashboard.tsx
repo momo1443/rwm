@@ -95,17 +95,19 @@ function formatTime(value: string | null) {
   return new Intl.DateTimeFormat("zh-CN", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
 }
 
-function formatDuration(result: Pick<ResultSummary, "consented_at" | "completed_at">) {
+const FORMAL_MIN_DURATION_SECONDS = (15 + 3 + 10) * 60;
+
+function formatDuration(result: Pick<ResultSummary, "consented_at" | "completed_at"> & Partial<Pick<ResultSummary, "researcher_test">>) {
   if (!result.completed_at) return "—";
   const minutes = Math.max(0, Math.round((new Date(result.completed_at).getTime() - new Date(result.consented_at).getTime()) / 60_000));
-  return `${minutes} 分钟`;
+  return `${minutes} 分钟${result.researcher_test ? "（测试模式）" : ""}`;
 }
 
 function qualityFlags(result: ResultSummary) {
   const flags: string[] = [];
   const durationSeconds = result.completed_at ? (new Date(result.completed_at).getTime() - new Date(result.consented_at).getTime()) / 1000 : null;
   if (result.researcher_test) flags.push("研究者测试运行");
-  if (!result.researcher_test && durationSeconds !== null && durationSeconds < 20 * 60) flags.push("用时短于正式流程下限");
+  if (!result.researcher_test && durationSeconds !== null && durationSeconds < FORMAL_MIN_DURATION_SECONDS) flags.push("用时短于正式流程最低计时（28 分钟）");
   if (result.status !== "completed") flags.push("未完成");
   if (!result.pre_survey || Object.keys(result.pre_survey).length < surveyItems.length) flags.push("前测缺失");
   if (!result.researcher_test && result.memo_length < 600) flags.push("Memo 较短");
@@ -157,16 +159,21 @@ function IndividualSurvey({ answers }: { answers: SurveyAnswer | null }) {
 }
 
 function CohortOverview({ results }: { results: ResultSummary[] }) {
-  const analysisReady = results.filter((result) => result.analysis_status === "included" && result.status === "completed" && result.pre_survey);
+  const [surveyScope, setSurveyScope] = useState<"analysis" | "completed">("analysis");
+  const surveyRows = results.filter((result) => result.status === "completed" && result.pre_survey && (
+    surveyScope === "analysis"
+      ? result.analysis_status === "included"
+      : result.analysis_status !== "trashed"
+  ));
   const tasks = [...new Set(results.map((result) => result.task_id))];
   const conditions = [...new Set(results.map((result) => result.condition))];
   const aggregates = scoredSubscales.map((subscale) => {
-    const values = analysisReady.map((result) => subscaleScores(result.pre_survey)[subscale]).filter((value): value is number => value != null);
+    const values = surveyRows.map((result) => subscaleScores(result.pre_survey)[subscale]).filter((value): value is number => value != null);
     return { subscale, value: mean(values), n: values.length };
   });
   return <section className="mb-6 grid gap-4 lg:grid-cols-[.8fr_1.2fr]">
     <article className="rounded-xl border bg-white p-5"><h2 className="font-semibold">协议版本样本分布</h2><p className="mt-1 text-xs text-muted-foreground">新主实验固定为一个任务、一个协议；旧任务和旧条件仅作历史记录</p><div className="mt-4 overflow-x-auto"><table className="w-full text-xs"><thead><tr><th className="p-2 text-left">任务</th>{conditions.map(condition=><th key={condition} className="p-2 text-center">{conditionLabels[condition]||condition}</th>)}</tr></thead><tbody>{tasks.map(taskId=><tr key={taskId} className="border-t"><td className="p-2 font-medium">{researchTaskMetadata(taskId).label}</td>{conditions.map(condition=><td key={condition} className="p-2 text-center font-mono">{results.filter(result=>result.task_id===taskId&&result.condition===condition).length}</td>)}</tr>)}</tbody></table></div></article>
-    <article className="rounded-xl border bg-white p-5"><h2 className="font-semibold">前测维度概览</h2><p className="mt-1 text-xs text-muted-foreground">仅统计“纳入分析且已完成”的被试；不同维度不合并</p><div className="mt-4 grid gap-3 sm:grid-cols-2">{aggregates.map(({ subscale, value, n }) => <ScoreBar key={subscale} label={subscale} value={value} n={n}/>)}</div></article>
+    <article className="rounded-xl border bg-white p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-semibold">前测维度概览</h2><p className="mt-1 text-xs text-muted-foreground">不同维度分别统计，不合并为总分</p></div><div className="flex rounded-lg border bg-muted/30 p-1 text-[11px]"><button type="button" onClick={()=>setSurveyScope("analysis")} className={`rounded-md px-2.5 py-1.5 ${surveyScope==="analysis"?"bg-white font-medium text-primary shadow-sm":"text-muted-foreground"}`}>正式分析样本</button><button type="button" onClick={()=>setSurveyScope("completed")} className={`rounded-md px-2.5 py-1.5 ${surveyScope==="completed"?"bg-white font-medium text-primary shadow-sm":"text-muted-foreground"}`}>全部已完成</button></div></div>{surveyScope==="analysis"&&surveyRows.length===0&&<p className="mt-4 rounded-lg bg-blue-50 px-3 py-2 text-xs leading-5 text-blue-900">当前没有“纳入分析且已完成”的正式样本。前测数据并未丢失，可切换到“全部已完成”查看研究者测试记录。</p>}<p className="mt-3 text-[11px] text-muted-foreground">当前范围：{surveyScope==="analysis"?"纳入分析且已完成":"全部已完成且未移入回收站"} · n={surveyRows.length}</p><div className="mt-4 grid gap-3 sm:grid-cols-2">{aggregates.map(({ subscale, value, n }) => <ScoreBar key={subscale} label={subscale} value={value} n={n}/>)}</div></article>
   </section>;
 }
 
