@@ -105,10 +105,10 @@ function qualityFlags(result: ResultSummary) {
   const flags: string[] = [];
   const durationSeconds = result.completed_at ? (new Date(result.completed_at).getTime() - new Date(result.consented_at).getTime()) / 1000 : null;
   if (result.researcher_test) flags.push("研究者测试运行");
-  if (durationSeconds !== null && durationSeconds < 20 * 60) flags.push("用时短于正式流程下限");
+  if (!result.researcher_test && durationSeconds !== null && durationSeconds < 20 * 60) flags.push("用时短于正式流程下限");
   if (result.status !== "completed") flags.push("未完成");
   if (!result.pre_survey || Object.keys(result.pre_survey).length < surveyItems.length) flags.push("前测缺失");
-  if (result.memo_length < 600) flags.push("Memo 较短");
+  if (!result.researcher_test && result.memo_length < 600) flags.push("Memo 较短");
   if (!result.has_recall) flags.push("无回忆数据");
   if (!result.event_sequence_complete) flags.push("事件序列不完整");
   if (!result.initial_material_presented) flags.push(`缺少 ${result.initial_material_id} 首次呈现`);
