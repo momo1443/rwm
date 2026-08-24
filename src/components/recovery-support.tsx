@@ -2,6 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Brain, CardsThree, FileText, Graph } from "@phosphor-icons/react";
+import {
+  Background,
+  Controls,
+  MarkerType,
+  ReactFlow,
+  type Edge,
+  type Node,
+} from "@xyflow/react";
 import { Badge } from "@/components/ui/badge";
 import { TimedButton } from "@/components/timed-button";
 import { eventLog } from "@/lib/event-log";
@@ -19,6 +27,79 @@ const relationLabels = {
   rejects: { "zh-CN": "排除", en: "rejects" },
   leads_to: { "zh-CN": "导向", en: "leads to" },
 } as const;
+
+const graphColumnByKind = {
+  goal: 0,
+  hypothesis: 1,
+  evidence: 1,
+  constraint: 2,
+  path: 2,
+  next_action: 3,
+} as const;
+
+function KnowledgeNetwork({ cards, relations, locale }: {
+  cards: ReturnType<typeof toReasoningCards>;
+  relations: ReturnType<typeof toCardRelations>;
+  locale: Locale;
+}) {
+  const graph = useMemo(() => {
+    const cardsByColumn = new Map<number, typeof cards>();
+    cards.forEach((card) => {
+      const column = graphColumnByKind[card.cardType];
+      cardsByColumn.set(column, [...(cardsByColumn.get(column) || []), card]);
+    });
+
+    const nodes: Node[] = cards.map((card) => {
+      const column = graphColumnByKind[card.cardType];
+      const columnCards = cardsByColumn.get(column) || [];
+      const row = columnCards.findIndex((item) => item.id === card.id);
+      return {
+        id: card.id,
+        position: { x: column * 300, y: row * 170 + Math.max(0, 3 - columnCards.length) * 42 },
+        data: { label: card.content[locale] },
+        style: {
+          width: 230,
+          minHeight: 76,
+          border: card.goalLevel === "main" ? "2px solid #3157b7" : "1px solid #cbd5e1",
+          borderRadius: 14,
+          background: card.goalLevel === "main" ? "#eef3ff" : "#ffffff",
+          color: "#172033",
+          padding: "14px 16px",
+          fontSize: 12,
+          fontWeight: 600,
+          lineHeight: 1.55,
+          whiteSpace: "normal",
+          textAlign: "left",
+          boxShadow: "0 8px 24px rgba(35, 43, 70, .08)",
+        },
+      };
+    });
+    const edges: Edge[] = relations.map((relation) => ({
+      id: relation.id,
+      source: relation.sourceCardId,
+      target: relation.targetCardId,
+      type: "smoothstep",
+      label: relationLabels[relation.relationType][locale],
+      markerEnd: { type: MarkerType.ArrowClosed, color: "#5670b5" },
+      style: { stroke: "#5670b5", strokeWidth: 1.6 },
+      labelStyle: { fill: "#40507a", fontSize: 10, fontWeight: 600 },
+      labelBgStyle: { fill: "#f7f9ff", fillOpacity: 0.95 },
+    }));
+    return { nodes, edges };
+  }, [cards, locale, relations]);
+
+  if (!cards.length) return <p className="rounded-xl border bg-muted/30 p-5 text-sm text-muted-foreground">{locale === "zh-CN" ? "当前 trace 中没有可展示的推理节点。" : "No reasoning nodes are available in this trace."}</p>;
+
+  return <div className="mx-auto max-w-5xl">
+    <div className="h-[520px] overflow-hidden rounded-xl border bg-slate-50/65" role="img" aria-label={locale === "zh-CN" ? "推理节点与关系连线组成的知识网络图" : "Knowledge network of reasoning nodes and relationships"}>
+      <ReactFlow nodes={graph.nodes} edges={graph.edges} fitView fitViewOptions={{ padding: 0.18 }} minZoom={0.35} maxZoom={1.5} nodesConnectable={false} elementsSelectable={false}>
+        <Background color="#dbe3f2" gap={22} size={1} />
+        <Controls showInteractive={false} />
+      </ReactFlow>
+    </div>
+    {!relations.length && <p className="mt-3 text-xs text-muted-foreground">{locale === "zh-CN" ? "已展示推理节点；本次 trace 中没有可可靠绘制的关系连线。" : "Reasoning nodes are shown, but this trace has no reliable relationship edges."}</p>}
+  </div>;
+}
 
 export function RecoverySupportPage({
   locale,
@@ -99,11 +180,7 @@ export function RecoverySupportPage({
         <div className="min-h-0 flex-1 overflow-auto p-6">
           {activeTab === "summary" && <p className="mx-auto max-w-3xl whitespace-pre-wrap text-sm leading-8">{summary || (locale === "zh-CN" ? "没有可用的恢复摘要。" : "No recovery summary is available.")}</p>}
           {activeTab === "cards" && <div className="mx-auto grid max-w-4xl gap-3 md:grid-cols-2">{cards.map((card) => <article key={card.id} className="rounded-xl border p-4"><div className="flex items-center justify-between gap-2"><Badge variant="outline" className="text-[9px]">{card.goalLevel || card.cardType}</Badge><span className="text-[10px] text-muted-foreground">{card.confidence ?? 0}%</span></div><h2 className="mt-3 text-sm font-semibold leading-6">{card.content[locale]}</h2><p className="mt-2 text-xs leading-5 text-muted-foreground">{card.detail[locale]}</p><p className="mt-3 text-[10px] text-primary">{card.sourceRefs.map((source) => source.label).join(" · ")}</p></article>)}</div>}
-          {activeTab === "network" && <div className="mx-auto max-w-4xl space-y-3">{relations.length ? relations.map((relation) => {
-            const source = cards.find((card) => card.id === relation.sourceCardId);
-            const target = cards.find((card) => card.id === relation.targetCardId);
-            return <article key={relation.id} className="grid items-center gap-3 rounded-xl border p-4 md:grid-cols-[1fr_auto_1fr]"><p className="text-sm font-medium leading-6">{source?.content[locale] || relation.sourceCardId}</p><Badge variant="secondary">{relationLabels[relation.relationType][locale]}</Badge><p className="text-sm font-medium leading-6">{target?.content[locale] || relation.targetCardId}</p></article>;
-          }) : <p className="rounded-xl border bg-muted/30 p-5 text-sm text-muted-foreground">{locale === "zh-CN" ? "当前 trace 中没有可可靠展示的关系。" : "No reliable relations are available in this trace."}</p>}</div>}
+          {activeTab === "network" && <KnowledgeNetwork cards={cards} relations={relations} locale={locale} />}
         </div>
       </section>}
 

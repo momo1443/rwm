@@ -5,7 +5,6 @@ import {
   ArrowRight,
   Brain,
   Check,
-  Clock,
   PauseCircle,
   Question,
   WarningCircle,
@@ -40,8 +39,7 @@ const labels = {
     break: "中断任务",
     resume: "恢复",
     saveAndBreak: "保存并进入中断任务",
-    waiting: "准备阶段将在 3 分钟后结束",
-    early: "请等待保存窗口结束，倒计时结束后才可进入中断任务。",
+    ready: "工作记录保存完成后即可进入中断任务",
     guideTitle: "保存窗口说明",
     guideDescription: "系统会在后台保存第一阶段的工作记录，不在本页展示处理结果。",
     interruption: "中断任务",
@@ -65,8 +63,7 @@ const labels = {
     break: "Interruption",
     resume: "Resume",
     saveAndBreak: "Save and begin interruption",
-    waiting: "Preparation ends after three minutes",
-    early: "Please wait until the save window ends before beginning the interruption.",
+    ready: "Continue as soon as the work record is saved",
     guideTitle: "Save-window guide",
     guideDescription: "The system saves the Phase 1 work record in the background and does not show any processing result on this page.",
     interruption: "Interruption",
@@ -104,40 +101,17 @@ export function ExperimentTimeline({ locale, active, compact=false }: { locale: 
   </div>;
 }
 
-const CHECKPOINT_DURATION_SECONDS = 180;
-
-function useCheckpointCountdown(fastMode: boolean) {
-  const duration = fastMode ? 0 : CHECKPOINT_DURATION_SECONDS;
-  const [remaining, setRemaining] = useState(duration);
-  useEffect(() => {
-    const storageKey = "rmw-timer-checkpoint";
-    const stored = Number(sessionStorage.getItem(storageKey));
-    const endAt = Number.isFinite(stored) && stored > Date.now() ? stored : Date.now() + duration * 1000;
-    sessionStorage.setItem(storageKey, String(endAt));
-    const update = () => setRemaining(Math.max(0, Math.ceil((endAt - Date.now()) / 1000)));
-    update();
-    const timer = window.setInterval(update, 250);
-    return () => window.clearInterval(timer);
-  }, [duration]);
-  return remaining;
-}
-
-function formatClock(totalSeconds: number) {
-  return `${String(Math.floor(totalSeconds / 60)).padStart(2, "0")}:${String(totalSeconds % 60).padStart(2, "0")}`;
-}
-
-
 function CheckpointGuide({ locale, open, onOpenChange }: { locale: Locale; open: boolean; onOpenChange: (open: boolean) => void }) {
   const steps = useMemo(() => locale === "zh-CN" ? [
     { target: "checkpoint-timeline", title: "保存阶段时间轴", body: "这里展示实验流程。您当前处于第 2 阶段「保存窗口 (Save Window)」，系统正在后台保存第一阶段的工作记录。" },
-    { target: "checkpoint-saved", title: "工作记录已保存", body: "系统已完成后台保存，无需您做任何操作，等待窗口结束后即可进入中断任务。" },
+    { target: "checkpoint-saved", title: "工作记录已保存", body: "系统完成后台保存后，即可直接进入中断任务。" },
     { target: "checkpoint-empty", title: "保存状态", body: "如果记录尚未保存完成，此区域会显示当前状态；请按页面提示等待或返回继续工作。" },
-    { target: "checkpoint-footer", title: "保存与进度控制", body: "此处展示当前保存窗口的等待倒计时或完成状态。在测试模式或倒计时结束后，可点击右侧按钮进入下一阶段。" },
+    { target: "checkpoint-footer", title: "保存与进度控制", body: "此处展示当前保存状态。保存完成后，可点击右侧按钮进入下一阶段。" },
   ] : [
     { target: "checkpoint-timeline", title: "Save Window Stage", body: "Indicates you are in Stage 2 (Save Window). The system saves the Phase 1 work record in the background." },
-    { target: "checkpoint-saved", title: "Work record saved", body: "The background save is complete. No action is required; the interruption begins once the wait period ends." },
+    { target: "checkpoint-saved", title: "Work record saved", body: "Once the background save is complete, you can proceed directly to the interruption." },
     { target: "checkpoint-empty", title: "Save status", body: "If the record is not yet saved, this area shows its current status; wait or return to the workspace as instructed." },
-    { target: "checkpoint-footer", title: "Save & Progress Control", body: "Displays countdown timer or completion status. In test mode or when finished, proceed to the next stage using the right button." },
+    { target: "checkpoint-footer", title: "Save & Progress Control", body: "Displays the current save status. Once saving is complete, proceed using the button on the right." },
   ], [locale]);
 
   return <GuidedTourOverlay
@@ -174,8 +148,6 @@ export function RmwCheckpoint({
   const [relations, setRelations] = useState<ProblemStateRelation[]>([]);
   const [mode, setMode] = useState<"loading" | "live" | "insufficient" | "unavailable" | "error">("loading");
   const [guideOpen, setGuideOpen] = useState(true);
-  const [earlyNotice, setEarlyNotice] = useState(false);
-  const remaining = useCheckpointCountdown(testMode);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -250,7 +222,7 @@ export function RmwCheckpoint({
       ? (testMode ? (locale === "zh-CN" ? "测试模式可跳过；正式实验不可继续" : "Test mode may skip; the formal study cannot continue") : (locale === "zh-CN" ? "工作记录尚未保存，无法进入中断任务" : "The work record has not been saved; interruption is blocked"))
       : testMode
         ? (locale === "zh-CN" ? "测试模式：可直接继续" : "Test mode: continue anytime")
-        : remaining > 0 ? t.waiting : (locale === "zh-CN" ? "可以进入中断任务" : "Interruption task is ready");
+        : t.ready;
 
   return <div className="min-h-screen bg-[#f7f6f2] px-6 py-5">
     <CheckpointGuide locale={locale} open={guideOpen} onOpenChange={setGuideOpen}/>
@@ -286,10 +258,9 @@ export function RmwCheckpoint({
       </section>}
 
       <div data-tour="checkpoint-footer" className="mt-5 flex items-center justify-between rounded-2xl border bg-white p-4">
-        <div className="flex items-center gap-3 text-sm"><Clock size={20} className="text-primary" /><div><p className="font-medium">{footerStatus}</p>{!testMode&&extractionReady&&remaining>0&&<div className="mt-2 flex items-center gap-3"><Progress value={((CHECKPOINT_DURATION_SECONDS-remaining)/CHECKPOINT_DURATION_SECONDS)*100} className="h-1.5 w-32" /><span className="text-xs text-muted-foreground">{formatClock(remaining)}</span></div>}</div></div>
+        <div className="flex items-center gap-3 text-sm"><Check size={20} className={extractionReady ? "text-emerald-600" : "text-primary"} /><p className="font-medium">{footerStatus}</p></div>
         <div className="text-right">
-          {!testMode&&earlyNotice && remaining > 0 && <p role="status" className="mb-2 text-xs text-amber-700">{t.early}</p>}
-          <Button variant={preparationReady&&(testMode||remaining === 0) ? "default" : "secondary"} disabled={mode === "loading" || (!testMode&&!preparationReady)} className="h-11 px-6" onClick={() => {
+          <Button variant={preparationReady ? "default" : "secondary"} disabled={mode === "loading" || (!testMode&&!preparationReady)} className="h-11 px-6" onClick={() => {
             if (!preparationReady) {
               if (testMode) {
                 eventLog("checkpoint_skipped_in_test_mode", { taskId, reason: mode }, { stage: "checkpoint" });
@@ -297,12 +268,7 @@ export function RmwCheckpoint({
               }
               return;
             }
-            if (!testMode&&remaining > 0) {
-              setEarlyNotice(true);
-              eventLog("checkpoint_continue_blocked", { remaining }, { stage: "checkpoint" });
-              return;
-            }
-            eventLog("checkpoint_completed", { taskId, condition, cards, relations, preparationSeconds: CHECKPOINT_DURATION_SECONDS }, { stage: "checkpoint" });
+            eventLog("checkpoint_completed", { taskId, condition, cards, relations, preparationSeconds: 0 }, { stage: "checkpoint" });
             onContinue({ cards, relations, capturedAt: new Date().toISOString() });
           }}>{!preparationReady&&testMode?(locale === "zh-CN"?"仅测试模式：跳过保存":"Test mode only: skip save"):t.saveAndBreak}<ArrowRight /></Button>
         </div>
