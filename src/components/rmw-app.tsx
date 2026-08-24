@@ -191,11 +191,11 @@ export function RmwApp() {
             eventLog("consent_submitted", { locale, access: "anonymous", participantId, condition: assignedCondition }, { stage: "consent" });
             setCompletionStatus("saving");
             setMemo(task.starterMemo[locale]);
-            setChat(assignedCondition === "rmw_no_summary" ? [] : [{ role: "assistant", text: task.assistantIntro[locale] }]);
+            setChat([{ role: "assistant", text: task.assistantIntro[locale] }]);
             setProblemState(null);
             setRecoveryAssessment(createRecoveryAssessment(assignedTaskId, sessionId));
             saveProblemStateSnapshot(null);
-            eventLog("research_task_started", { taskId: assignedTaskId, assignment: assignmentMode === "manual" ? "manual_test" : "participant_selected_condition", protocolVersion: "reasoning-recovery-v3-three-arm", participantId, condition: assignedCondition }, { stage: "task_setup" });
+            eventLog("research_task_started", { taskId: assignedTaskId, assignment: assignmentMode === "manual" ? "manual_test" : "participant_selected_condition", protocolVersion: "reasoning-recovery-v4-matched-preinterruption", participantId, condition: assignedCondition }, { stage: "task_setup" });
             setScreen("brief");
           } finally {
             startingRef.current = false;
@@ -327,12 +327,10 @@ function TaskBrief({locale,taskId,setScreen}:{locale:Locale;taskId:ResearchTaskI
     <Badge variant="secondary" className="rounded-full text-primary">{task.label[locale]}</Badge>
     <p className="mt-5 text-lg font-semibold leading-8">{task.question[locale]}</p>
     <p className="mt-4 rounded-xl bg-secondary/55 p-4 text-sm leading-7 text-secondary-foreground">{task.overview[locale]}</p>
-    <div className="mt-6">
-      <h2 className="text-sm font-semibold">{locale==="zh-CN"?"第一阶段包含 3 个目标，每个目标有多个评价点：":"Phase 1 contains three goals, each with multiple evaluation criteria:"}</h2>
-      <div className="mt-3 space-y-3">{task.phaseOneGoals.map((goal,index)=><section key={goal.id} className="rounded-xl border bg-white p-4">
-        <div className="flex items-center gap-3"><span className="grid size-7 shrink-0 place-items-center rounded-full bg-secondary text-xs font-semibold text-primary">{index+1}</span><h3 className="text-sm font-semibold">{goal.title[locale]}</h3></div>
-        <ul className="ml-10 mt-3 space-y-2 text-xs leading-5 text-muted-foreground">{goal.criteria.map(criterion=><li key={criterion[locale]} className="flex gap-2"><span className="mt-2 size-1.5 shrink-0 rounded-full bg-primary/55"/><span>{criterion[locale]}</span></li>)}</ul>
-      </section>)}</div>
+    <div className="mt-6 rounded-xl border bg-white p-5">
+      <h2 className="text-sm font-semibold">{locale==="zh-CN"?"第一阶段任务":"Phase 1 task"}</h2>
+      <p className="mt-3 text-sm leading-7 text-muted-foreground">{locale==="zh-CN"?"阅读材料并与 AI 讨论后，形成一份当前的分析 memo。比较三个方案，并给出你目前认为最合理的建议。":"After reading the materials and discussing them with the AI, write a current analysis memo. Compare the three options and give the recommendation you presently find most reasonable."}</p>
+      <p className="mt-2 text-sm leading-7 text-muted-foreground">{locale==="zh-CN"?"你可以记录任何有助于之后继续分析的信息，格式不限；当前结论不需要是最终结论。":"Record anything that may help you continue the analysis later, in any format. Your current conclusion does not need to be final."}</p>
     </div>
     <div className="mt-8 grid grid-cols-[auto_1fr] gap-3">
       <Button variant="outline" onClick={()=>{resetStudySessionForNewRun();setScreen("landing")}}>{locale==="zh-CN"?"返回":"Back"}</Button>
@@ -545,14 +543,14 @@ function WorkspaceTour({locale,onComplete}:{locale:Locale;onComplete:()=>void}) 
   const zhSteps:{target:string;title:string;body:string}[]=[
     {target:"materials",title:"先阅读实验材料",body:"这里是当前任务的证据与约束材料。点击不同材料查看全文，系统会记录阅读进度。"},
     {target:"memo",title:"撰写分析/决策 memo",body:"请在中间区域撰写你的当前分析/决策 memo。内容会持续保存；拖动两侧的竖向分隔条可调整各列宽度。"},
-    {target:"goals",title:"检查右上角目标",body:"右上角用于逐项核对第一阶段目标。目标内容可独立上下滚动。"},
-    {target:"chat",title:"与 AI 比较问题框架",body:"请要求 AI 引用材料编号，并区分证据、推断和仍需验证的假设。"},
+    {target:"goals",title:"查看当前任务",body:"右上角保留当前任务说明，方便你在分析过程中随时查看。"},
+    {target:"chat",title:"与 AI 讨论",body:"你可以让 AI 帮助比较材料和澄清问题，但最终建议由你决定。"},
   ];
   const enSteps:{target:string;title:string;body:string}[]=[
     {target:"materials",title:"Read the evidence first",body:"These sources describe the current task evidence and constraints. Open each one to read it; reading progress is recorded."},
     {target:"memo",title:"Write an analysis/decision memo",body:"Use the central area to write your current analysis/decision memo. Its content is continuously saved; drag either vertical divider to resize the columns."},
-    {target:"goals",title:"Check the upper-right goals",body:"Use the upper-right window to check Phase 1 requirements. Its content scrolls independently."},
-    {target:"chat",title:"Compare framings with AI",body:"Ask the AI to cite source IDs and distinguish evidence, inference, and unverified assumptions."},
+    {target:"goals",title:"Review the current task",body:"The upper-right window keeps the task instructions available while you work."},
+    {target:"chat",title:"Discuss with AI",body:"Use the AI to compare the materials and clarify questions, while keeping the final recommendation your own."},
   ];
   const steps=locale==="zh-CN"?zhSteps:enSteps;
   const [index,setIndex]=useState(0);
@@ -636,7 +634,6 @@ function Workspace({
   const timerExpiredLoggedRef=useRef(false);
   const onPhaseOneCaptureRef=useRef(onPhaseOneCapture);
   const centerColumnRatio=100-leftColumnRatio-rightColumnRatio;
-  const chatDisabled=condition==="rmw_no_summary";
   const timerText=`${String(Math.floor(remainingSeconds/60)).padStart(2,"0")}:${String(remainingSeconds%60).padStart(2,"0")}`;
 
   useEffect(()=>{
@@ -698,7 +695,7 @@ function Workspace({
   };
   const send=async()=>{
     const userText=message.trim();
-    if(!userText||isLoading||chatDisabled)return;
+    if(!userText||isLoading)return;
     const history:ChatMessage[]=[...chat,{role:"user",text:userText}];
     setChat(history);
     setMessage("");
@@ -767,11 +764,11 @@ function Workspace({
       >
         <span className="h-12 w-1 rounded-full bg-border transition group-hover:bg-primary/45"/>
       </button>
-      <section ref={rightColumnRef} className="grid min-h-0 min-w-0 overflow-hidden bg-white" style={{gridTemplateRows:chatDisabled?"1fr 58px":`${rightTopRatio}fr 10px ${100-rightTopRatio}fr`}}>
+      <section ref={rightColumnRef} className="grid min-h-0 min-w-0 overflow-hidden bg-white" style={{gridTemplateRows:`${rightTopRatio}fr 10px ${100-rightTopRatio}fr`}}>
         {phase==="work"
           ?<PhaseOnePanel locale={locale} condition={condition} taskId={taskId} memo={memo} remaining={remainingSeconds} testMode={testMode} onPhaseOneCapture={onPhaseOneCapture} setScreen={setScreen}/>
           :<ContinuationPanel locale={locale} taskId={taskId} remaining={remainingSeconds} testMode={testMode} setScreen={setScreen} t={t}/>}
-        {chatDisabled?<div data-tour="chat" className="flex items-center gap-3 border-t bg-muted/35 px-5 text-xs leading-5 text-muted-foreground"><NotePencil size={18} className="shrink-0 text-primary"/>{locale==="zh-CN"?"自主笔记方式：本流程不提供 AI 对话。":"Self-notes method: AI chat is not provided in this flow."}</div>:<><button
+        <button
           type="button"
           aria-label={locale==="zh-CN"?"上下拖动，调整目标与 AI 助手窗口高度":"Drag vertically to resize the goals and AI-assistant windows"}
           title={locale==="zh-CN"?"上下拖动调整窗口高度":"Drag to resize panels"}
@@ -787,7 +784,7 @@ function Workspace({
         >
           <span className="h-1 w-12 rounded-full bg-border transition group-hover:bg-primary/45"/>
         </button>
-        <ChatPanel locale={locale} chat={chat} message={message} setMessage={setMessage} send={send} isLoading={isLoading} error={chatError} t={t}/></>}
+        <ChatPanel locale={locale} chat={chat} message={message} setMessage={setMessage} send={send} isLoading={isLoading} error={chatError} t={t}/>
       </section>
     </div>
     {showTour&&<WorkspaceTour locale={locale} onComplete={()=>setShowTour(false)}/>}
@@ -834,15 +831,7 @@ function MaterialsPanel({locale,taskId,phase,t}:{locale:Locale;taskId:ResearchTa
   </aside>;
 }
 
-function ChatPanel({locale,chat,message,setMessage,send,isLoading,error,disabled,t}:{locale:Locale;chat:ChatMessage[];message:string;setMessage:(s:string)=>void;send:()=>void;isLoading:boolean;error:string|null;disabled?:boolean;t:typeof copy[Locale]}) {
-  if(disabled){
-    return <section data-tour="chat" className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-white">
-      <div className="flex h-14 shrink-0 items-center justify-between border-b px-5"><h2 className="flex items-center gap-2 font-semibold"><Sparkle size={19} className="text-muted-foreground" weight="fill"/>{t.chat}</h2><Badge variant="outline" className="text-[10px]">{locale==="zh-CN"?"本条件不可用":"Unavailable"}</Badge></div>
-      <div className="flex min-h-0 flex-1 items-center justify-center px-8 text-center">
-        <p className="text-sm leading-6 text-muted-foreground">{locale==="zh-CN"?"你被分配到用户自主笔记条件：本条件全程不提供 AI 对话，请依靠自己在工作区中的记录来推进和恢复思路。":"You are in the Self-Notes condition: no AI chat is available at any point. Rely on your own notes in the workspace to reason and to resume later."}</p>
-      </div>
-    </section>;
-  }
+function ChatPanel({locale,chat,message,setMessage,send,isLoading,error,t}:{locale:Locale;chat:ChatMessage[];message:string;setMessage:(s:string)=>void;send:()=>void;isLoading:boolean;error:string|null;t:typeof copy[Locale]}) {
   return <section data-tour="chat" className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-white">
     <div className="flex h-14 shrink-0 items-center justify-between border-b px-5"><h2 className="flex items-center gap-2 font-semibold"><Sparkle size={19} className="text-primary" weight="fill"/>{t.chat}</h2><Badge variant="outline" className="text-[10px]">DeepSeek</Badge></div>
     <div className="panel-scroll min-h-0 flex-1 overflow-y-auto px-5 py-5">
@@ -877,41 +866,24 @@ function MemoPanel({locale,taskId,phase,memo,setMemo,t}:{locale:Locale;taskId:Re
 
 function PhaseOnePanel({locale,condition,taskId,memo,remaining,testMode,onPhaseOneCapture,setScreen}:{locale:Locale;condition:Condition;taskId:ResearchTaskId;memo:string;remaining:number;testMode:boolean;onPhaseOneCapture?:()=>void;setScreen:(screen:Screen)=>void}) {
   const task=getResearchTask(taskId);
-  const phaseOneGoals=task.phaseOneGoals;
-  const [completed,setCompleted]=useState<Set<string>>(()=>new Set());
-  const criterionId=(goalId:string,index:number)=>`${goalId}:${index}`;
-  const toggleCriterion=(goalId:string,index:number)=>setCompleted(current=>{
-    const id=criterionId(goalId,index);
-    const next=new Set(current);
-    if(next.has(id))next.delete(id);else next.add(id);
-    eventLog("phase_criterion_toggled",{taskId,goalId,criterionIndex:index,completed:!current.has(id)},{stage:"research_work"});
-    return next;
-  });
-  const completedGoalCount=phaseOneGoals.filter(goal=>goal.criteria.every((_,index)=>completed.has(criterionId(goal.id,index)))).length;
-  const totalCriteria=phaseOneGoals.reduce((total,goal)=>total+goal.criteria.length,0);
   const wordCount=(text:string)=>locale==="zh-CN"?text.replace(/\s/g,"").length:(text.trim()?text.trim().split(/\s+/).length:0);
   const memoCount=Math.max(0,wordCount(memo)-wordCount(task.starterMemo[locale]));
   const checkpointReady=testMode||remaining<=0;
   return <section data-tour="goals" className="flex min-h-0 flex-col bg-[#fbfcfe]">
-    <div className="flex h-14 shrink-0 items-center justify-between border-b px-5"><h2 className="flex items-center gap-2 font-semibold"><Target size={20} className="text-primary"/>{locale==="zh-CN"?"第一阶段目标":"Phase 1 goals"}</h2><Badge variant="outline" className="bg-white text-[10px]">{completedGoalCount} / {phaseOneGoals.length} {locale==="zh-CN"?"个目标":"goals"}</Badge></div>
+    <div className="flex h-14 shrink-0 items-center justify-between border-b px-5"><h2 className="flex items-center gap-2 font-semibold"><Target size={20} className="text-primary"/>{locale==="zh-CN"?"当前任务":"Current task"}</h2><Badge variant="outline" className="bg-white text-[10px]">{locale==="zh-CN"?"自由记录":"Free-form notes"}</Badge></div>
     <div className="panel-scroll min-h-0 flex-1 overflow-y-auto px-5 py-4">
       <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4"><p className="text-[10px] font-semibold uppercase tracking-wider text-indigo-700">{task.label[locale]} · Research question</p><p className="mt-2 text-sm font-semibold leading-6 text-indigo-950">{task.question[locale]}</p></div>
-      <div className="mt-4 space-y-3">{phaseOneGoals.map((goal,index)=><section key={goal.id} className={`rounded-xl border p-3 transition ${goal.criteria.every((_,criterionIndex)=>completed.has(criterionId(goal.id,criterionIndex)))?"border-emerald-200 bg-emerald-50/45":"bg-white"}`}>
-        <div className="flex items-center gap-2"><span className="grid size-6 shrink-0 place-items-center rounded-full bg-secondary text-[10px] font-semibold text-primary">{index+1}</span><h3 className="text-xs font-semibold">{goal.title[locale]}</h3></div>
-        <div className="ml-8 mt-2 space-y-1.5">{goal.criteria.map((criterion,criterionIndex)=>{
-          const id=criterionId(goal.id,criterionIndex);
-          return <label key={id} className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 text-[11px] leading-4 hover:bg-muted/50"><input type="checkbox" checked={completed.has(id)} onChange={()=>toggleCriterion(goal.id,criterionIndex)} className="mt-0.5 size-3.5 accent-[var(--active)]"/><span>{criterion[locale]}</span></label>;
-        })}</div>
-      </section>)}</div>
+      <div className="mt-4 rounded-xl border bg-white p-4 text-sm leading-7 text-muted-foreground">
+        <p>{locale==="zh-CN"?"阅读材料并与 AI 讨论后，形成一份当前的分析 memo。比较三个方案，并给出你目前认为最合理的建议。":"After reading the materials and discussing them with the AI, write a current analysis memo. Compare the three options and give the recommendation you presently find most reasonable."}</p>
+        <p className="mt-2">{locale==="zh-CN"?"你可以记录任何有助于之后继续分析的信息，格式不限；当前结论不需要是最终结论。":"Record anything that may help you continue the analysis later, in any format. Your current conclusion does not need to be final."}</p>
+      </div>
     </div>
-    <div className="shrink-0 border-t bg-white px-5 py-3"><div className="mb-2 flex justify-between text-[10px] text-muted-foreground"><span>{checkpointReady?(locale==="zh-CN"?"冻结入口已开放":"Trace-freeze step is open"):(locale==="zh-CN"?"请先完整思考 15 分钟，之后开放下一步":"Next step opens after the full 15-minute thinking period")}</span><span>{memoCount} {locale==="zh-CN"?"字":"words"} · {completed.size}/{totalCriteria} {locale==="zh-CN"?"评价点":"criteria"}</span></div><TimedButton seconds={10} ready={checkpointReady} locale={locale} label={locale==="zh-CN"?"冻结当前记录并进入 T1":"Freeze the current trace and begin T1"} blockedLabel={locale==="zh-CN"?"下一步尚未开放":"Next step is not open yet"} className="h-11 w-full text-sm" onClick={()=>{const nextScreen:Screen="city_t1";eventLog("phase_one_checkpoint_requested",{taskId,condition,completedGoals:completedGoalCount,completedCriteria:completed.size,totalCriteria,memoCount,remaining,nextScreen},{stage:"research_work"});onPhaseOneCapture?.();setScreen(nextScreen)}} /></div>
+    <div className="shrink-0 border-t bg-white px-5 py-3"><div className="mb-2 flex justify-between text-[10px] text-muted-foreground"><span>{checkpointReady?(locale==="zh-CN"?"可以保存当前工作并继续":"You can save your current work and continue"):(locale==="zh-CN"?"请先完整分析 15 分钟，之后开放下一步":"Next step opens after the full 15-minute analysis period")}</span><span>{memoCount} {locale==="zh-CN"?"字":"words"}</span></div><TimedButton seconds={10} ready={checkpointReady} locale={locale} label={locale==="zh-CN"?"保存当前工作并进入 T1":"Save current work and begin T1"} blockedLabel={locale==="zh-CN"?"下一步尚未开放":"Next step is not open yet"} className="h-11 w-full text-sm" onClick={()=>{const nextScreen:Screen="city_t1";eventLog("phase_one_checkpoint_requested",{taskId,condition,memoCount,remaining,nextScreen},{stage:"research_work"});onPhaseOneCapture?.();setScreen(nextScreen)}} /></div>
   </section>;
 }
 
-// Single-protocol design (no recovery conditions): the continuation phase
-// never reveals recovery support, a summary, cards, or a network. It only
-// tells the participant that a new source was added, matching the paper's
-// D6-continuation step after the unsupported T2 probe.
+// After condition-specific recovery and T3, all groups return to the same
+// D6 continuation workspace and task instructions.
 function ContinuationPanel({locale,taskId,remaining,testMode,setScreen,t}:{locale:Locale;taskId:ResearchTaskId;remaining:number;testMode:boolean;setScreen:(s:Screen)=>void;t:typeof copy[Locale]}) {
   const task=getResearchTask(taskId);
   return <RecoveryShell t={t}>

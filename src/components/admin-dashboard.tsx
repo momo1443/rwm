@@ -89,6 +89,11 @@ const activeConditionDefinitions = [
   { id: "summary_only", label: "方式三", description: "仅 AI 摘要：恢复时只显示连续文本摘要，不提供推理卡片或知识网络。" },
 ] as const;
 const exclusionReasons = ["研究者测试", "自动化或非真实被试", "未完成实验", "技术故障", "重复记录", "不符合纳入标准", "被试要求撤回", "其他"];
+const threeArmAssessmentVersions = ["reasoning-recovery-v3-three-arm", "reasoning-recovery-v4-matched-preinterruption"] as const;
+
+function isThreeArmAssessmentVersion(value: unknown) {
+  return typeof value === "string" && threeArmAssessmentVersions.includes(value as typeof threeArmAssessmentVersions[number]);
+}
 
 function formatTime(value: string | null) {
   if (!value) return "—";
@@ -116,11 +121,11 @@ function qualityFlags(result: ResultSummary) {
   if (result.material_completion_count < result.expected_material_count) flags.push(`第一阶段材料暴露 ${result.material_completion_count}/${result.expected_material_count}`);
   if (!result.interruption_completed) flags.push("中断任务未完成");
   if (result.status === "completed" && result.recovery_new_material_exposed === false) flags.push("恢复后新增材料未达到最低暴露");
-  if (["reasoning-trace-gap-v1", "reasoning-recovery-v3-three-arm"].includes(result.assessment_version || "") && !result.frozen_trace_present) flags.push("缺少冻结 trace 元数据");
-  if (result.assessment_version === "reasoning-recovery-v3-three-arm" && !result.recovery_probe_complete) flags.push(`T1/T2/T3 仅 ${result.recovery_probe_count}/3`);
+  if ((result.assessment_version === "reasoning-trace-gap-v1" || isThreeArmAssessmentVersion(result.assessment_version)) && !result.frozen_trace_present) flags.push("缺少冻结 trace 元数据");
+  if (isThreeArmAssessmentVersion(result.assessment_version) && !result.recovery_probe_complete) flags.push(`T1/T2/T3 仅 ${result.recovery_probe_count}/3`);
   if (result.assessment_version === "reasoning-trace-gap-v1" && !result.recovery_probe_complete) flags.push(`T1/T2 仅 ${result.recovery_probe_count}/2`);
-  if (["reasoning-trace-gap-v1", "reasoning-recovery-v3-three-arm"].includes(result.assessment_version || "") && !result.content_probe_complete) flags.push("T1/T2 的 6+6 内容对照题不完整");
-  if (["reasoning-trace-gap-v1", "reasoning-recovery-v3-three-arm"].includes(result.assessment_version || "") && !result.post_survey_complete) flags.push("缺少任务后问卷");
+  if ((result.assessment_version === "reasoning-trace-gap-v1" || isThreeArmAssessmentVersion(result.assessment_version)) && !result.content_probe_complete) flags.push("T1/T2 的 6+6 内容对照题不完整");
+  if ((result.assessment_version === "reasoning-trace-gap-v1" || isThreeArmAssessmentVersion(result.assessment_version)) && !result.post_survey_complete) flags.push("缺少任务后问卷");
   return flags;
 }
 
@@ -177,7 +182,7 @@ function CohortOverview({ results }: { results: ResultSummary[] }) {
 }
 
 function ConditionDesignLegend() {
-  return <section className="mb-6 rounded-xl border bg-white p-5"><h2 className="font-semibold">三条件恢复协议</h2><p className="mt-1 text-xs text-muted-foreground">参与者在入口直接选择方式，不进行随机分配。三组共享 T1/T2 的 6 reasoning + 6 content；恢复方式展示后完成 T3 六项 reasoning，再进入 D6 延续任务和任务后问卷。</p><div className="mt-4 grid gap-3 lg:grid-cols-3">{activeConditionDefinitions.map(item=><article key={item.id} className="rounded-lg border p-4"><Badge>{item.label}</Badge><p className="mt-3 text-xs leading-5 text-muted-foreground">{item.description}</p><p className="mt-2 font-mono text-[9px] text-muted-foreground">{item.id}</p></article>)}</div></section>;
+  return <section className="mb-6 rounded-xl border bg-white p-5"><h2 className="font-semibold">三条件恢复协议</h2><p className="mt-1 text-xs text-muted-foreground">v4 协议中，三组在 T2 前共享完全相同的 Materials、AI Chat、自由 memo、15 分钟工作期、冻结记录、T1、中断任务与无辅助 T2。仅恢复支持不同；恢复后完成 T3，再进入 D6 延续任务和任务后问卷。</p><div className="mt-4 grid gap-3 lg:grid-cols-3">{activeConditionDefinitions.map(item=><article key={item.id} className="rounded-lg border p-4"><Badge>{item.label}</Badge><p className="mt-3 text-xs leading-5 text-muted-foreground">{item.description}</p><p className="mt-2 font-mono text-[9px] text-muted-foreground">{item.id}</p></article>)}</div></section>;
 }
 
 function formatPercent(value: number | null) {
@@ -194,7 +199,7 @@ function StudyOutcomeOverview({ results }: { results: ResultSummary[] }) {
       const completed = rows.filter((result) => result.status === "completed").length;
       const interruption = rows.filter((result) => result.interruption_completed).length;
       const letterValues = rows.map((result) => result.letter_accuracy).filter((value): value is number => value != null);
-      const probeRows = rows.filter((result) => result.assessment_version === "reasoning-recovery-v3-three-arm");
+      const probeRows = rows.filter((result) => isThreeArmAssessmentVersion(result.assessment_version));
       const durations = probeRows.map((result) => result.interruption_duration_seconds).filter((value): value is number => value != null);
       return <tr key={`${taskId}-${condition}`} className="border-t"><td className="p-3 font-medium">{researchTaskMetadata(taskId).label}</td><td className="p-3">{conditionLabels[condition] || condition}<span className="ml-2 text-muted-foreground">n={rows.length}</span></td><td className="p-3"><p>{completed}/{rows.length}</p><div className="mt-1 h-1.5 w-24 rounded-full bg-muted"><div className="h-full rounded-full bg-emerald-500" style={{width:`${rows.length ? completed / rows.length * 100 : 0}%`}}/></div></td><td className="p-3">{interruption}/{rows.length}</td><td className="p-3">{durations.length ? `${Math.round(mean(durations) || 0)} 秒` : "—"}</td><td className="p-3">{formatPercent(mean(letterValues))}</td><td className="p-3">{probeRows.filter((result) => result.recovery_probe_complete && result.content_probe_complete).length}/{probeRows.length || "—"}</td><td className="p-3">{probeRows.filter((result) => result.frozen_trace_present).length}/{probeRows.length || "—"}</td><td className="p-3">{Math.round(mean(rows.map((result) => result.memo_length)) || 0)}</td><td className="p-3">{(mean(rows.map((result) => result.user_chat_turn_count)) || 0).toFixed(1)}</td></tr>;
     })}</tbody></table></div>
@@ -223,9 +228,9 @@ function problemStateView(value: unknown): ProblemStateView | null {
 const recoveryStageLabels: Record<RecoveryProbeStage, string> = { t1: "T1 中断前基线", t2: "T2 中断后无辅助", t3: "T3 恢复支持后" };
 
 function RecoveryAssessmentPanel({ value }: { value: unknown }) {
-  const assessment = value && typeof value === "object" && "version" in value && (value.version === "reasoning-trace-gap-v1" || value.version === "reasoning-recovery-v3-three-arm") ? value as RecoveryAssessment : null;
+  const assessment = value && typeof value === "object" && "version" in value && (value.version === "reasoning-trace-gap-v1" || isThreeArmAssessmentVersion(value.version)) ? value as RecoveryAssessment : null;
   if (!assessment) return null;
-  const stages: RecoveryProbeStage[] = assessment.version === "reasoning-recovery-v3-three-arm" ? ["t1", "t2", "t3"] : ["t1", "t2"];
+  const stages: RecoveryProbeStage[] = isThreeArmAssessmentVersion(assessment.version) ? ["t1", "t2", "t3"] : ["t1", "t2"];
   return <section className="space-y-4">
     <div><h3 className="text-sm font-semibold">三条件恢复测量</h3><p className="mt-1 text-[11px] leading-5 text-muted-foreground">T1、T2 各记录六个推理维度与六道 A/B 平行内容题；T3 在恢复支持后再次记录六个推理维度。T3−T2 为恢复增益。</p></div>
     <div className="grid gap-3 sm:grid-cols-2"><MetricTile label="测量完整度" value={`${stages.filter((stage) => assessment.probes[stage]).length}/${stages.length}`} detail={stages.join("、").toUpperCase()}/><MetricTile label="冻结 trace" value={assessment.frozenTrace ? "已记录" : "缺失"} detail={assessment.frozenTrace ? `cutoff seq ${assessment.frozenTrace.cutoffSequenceNumber}` : "不可进入主分析"}/></div>
@@ -241,7 +246,7 @@ function TaskOutcomePanel({ detail, events }: { detail: ParticipantResult; event
   const cards = Array.isArray(problemState?.cards) ? problemState.cards : [];
   const assessmentVersion = detail.task_assessment && typeof detail.task_assessment === "object" && "version" in detail.task_assessment ? detail.task_assessment.version : null;
   return <div className="space-y-6">
-    {(assessmentVersion === "reasoning-trace-gap-v1" || assessmentVersion === "reasoning-recovery-v3-three-arm") && <RecoveryAssessmentPanel value={detail.task_assessment} />}
+    {(assessmentVersion === "reasoning-trace-gap-v1" || isThreeArmAssessmentVersion(assessmentVersion)) && <RecoveryAssessmentPanel value={detail.task_assessment} />}
     <section><div className="flex items-end justify-between"><div><h3 className="text-sm font-semibold">任务流程完成证据</h3><p className="mt-1 text-xs text-muted-foreground">判断记录是否覆盖实验流程，不等同于任务质量评分。</p></div><span className="font-mono text-sm">{completed}/{milestones.length}</span></div><div className="mt-3 grid gap-2 sm:grid-cols-2">{milestones.map((milestone) => <div key={milestone.label} className={`flex items-start gap-2 rounded-lg border p-3 text-xs ${milestone.complete ? "border-emerald-200 bg-emerald-50" : "bg-muted/30"}`}>{milestone.complete ? <CheckCircle className="mt-0.5 shrink-0 text-emerald-600"/> : <WarningCircle className="mt-0.5 shrink-0 text-amber-600"/>}<div><p className="font-medium">{milestone.label}</p><p className="mt-1 font-mono text-[9px] text-muted-foreground">{milestone.evidence}</p></div></div>)}</div></section>
     <section><div className="flex items-center justify-between"><h3 className="text-sm font-semibold">最终 Memo</h3><Badge variant="outline">{detail.memo?.trim().length || 0} 字符</Badge></div><div className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap rounded-lg bg-muted/45 p-4 text-xs leading-6">{detail.memo || "尚未保存"}</div><p className="mt-2 text-[11px] text-muted-foreground">字数只用于检查是否形成产出；清晰度、证据质量和实验可行性仍需盲评编码。</p></section>
     <section><div className="flex items-center justify-between"><h3 className="text-sm font-semibold">中断前 Problem State</h3><Badge variant="outline">{cards.length} 张卡 · {problemState?.relations?.length || 0} 条关系</Badge></div>{cards.length ? <div className="mt-3 space-y-2">{cards.map((card,index) => <article key={card.id || index} className="rounded-lg border p-3"><div className="flex flex-wrap gap-2"><Badge variant="secondary">{card.kind || "unknown"}</Badge><Badge variant="outline">{card.status || "unknown"}</Badge>{card.priority === "pinned" && <Badge>pinned</Badge>}<span className="ml-auto text-[10px] text-muted-foreground">confidence {typeof card.confidence === "number" ? card.confidence.toFixed(2) : "—"}</span></div><p className="mt-2 text-xs leading-5">{card.content?.[detail.locale] || card.content?.["zh-CN"] || card.content?.en || "—"}</p></article>)}</div> : <p className="mt-3 rounded-lg bg-muted/40 p-4 text-sm text-muted-foreground">该条件没有保存 Problem State，或尚未到达生成阶段。</p>}</section>

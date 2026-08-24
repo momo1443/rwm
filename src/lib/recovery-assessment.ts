@@ -29,8 +29,7 @@ export type RecoveryReadiness = {
 };
 
 // Post-task survey. Five adapted subscales — see docs/post-task-survey-references.md
-// for the source of each group and why the single-protocol design (no recovery
-// support is ever shown) rules out asking about "recovery support" directly.
+// for the source and scoring rationale for each group.
 export const postTaskSurveyGroups = ["task_load", "perceived_loss", "metacognition", "ai_reliance", "agency"] as const;
 export type PostTaskSurveyGroup = typeof postTaskSurveyGroups[number];
 
@@ -73,7 +72,7 @@ export const postTaskSurveyItems: PostTaskSurveyItem[] = [
 export type RecoveryPostSurvey = Record<PostTaskSurveyItemKey, number>;
 
 export type RecoveryAssessment = {
-  version: "reasoning-recovery-v3-three-arm";
+  version: "reasoning-recovery-v3-three-arm" | "reasoning-recovery-v4-matched-preinterruption";
   taskId: ResearchTaskId;
   formOrder: "AB" | "BA";
   probes: Partial<Record<RecoveryProbeStage, RecoveryProbe>>;
@@ -130,7 +129,7 @@ export function getContentRecallPrompts(form: RecallForm, locale: Locale) {
 export function createRecoveryAssessment(taskId: ResearchTaskId, sessionId = "0"): RecoveryAssessment {
   const lastHex = sessionId.replaceAll("-", "").at(-1) || "0";
   return {
-    version: "reasoning-recovery-v3-three-arm",
+    version: "reasoning-recovery-v4-matched-preinterruption",
     taskId,
     formOrder: Number.parseInt(lastHex, 16) % 2 === 0 ? "AB" : "BA",
     probes: {},
@@ -143,7 +142,7 @@ export function withRecoveryProbe(assessment: RecoveryAssessment, stage: Recover
 
 export function recoveryAssessmentEventPayload(stage: RecoveryProbeStage, probe: RecoveryProbe) {
   return {
-    version: "reasoning-recovery-v3-three-arm",
+    version: "reasoning-recovery-v4-matched-preinterruption",
     stage,
     form: probe.form,
     reasoningAnswered: reasoningRecallDimensions.filter((dimension) => probe.reasoning[dimension].trim()).length,

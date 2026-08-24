@@ -59,7 +59,7 @@ const supportedRecoveryProbeSchema = z.object({
   submittedAt: z.string().datetime(),
 }).strict();
 const threeArmAssessmentSchema = z.object({
-  version: z.literal("reasoning-recovery-v3-three-arm"),
+  version: z.enum(["reasoning-recovery-v3-three-arm", "reasoning-recovery-v4-matched-preinterruption"]),
   taskId: z.literal("city_policy"),
   formOrder: z.enum(["AB", "BA"]),
   probes: z.object({ t1: recoveryProbeSchema.optional(), t2: recoveryProbeSchema.optional(), t3: supportedRecoveryProbeSchema.optional() }).strict(),
@@ -250,7 +250,7 @@ export async function POST(request: Request) {
     const currentAssessment = current.task_assessment && typeof current.task_assessment === "object" && "version" in current.task_assessment
       ? current.task_assessment as { version?: unknown; frozenTrace?: unknown }
       : null;
-    if ((currentAssessment?.version === "reasoning-trace-gap-v1" || currentAssessment?.version === "reasoning-recovery-v3-three-arm") && currentAssessment.frozenTrace
+    if ((currentAssessment?.version === "reasoning-trace-gap-v1" || currentAssessment?.version === "reasoning-recovery-v3-three-arm" || currentAssessment?.version === "reasoning-recovery-v4-matched-preinterruption") && currentAssessment.frozenTrace
       && data.taskAssessment?.version === currentAssessment.version
       && !jsonValuesEqual(data.taskAssessment.frozenTrace, currentAssessment.frozenTrace)) {
       return NextResponse.json({ error: "The frozen trace cutoff is immutable" }, { status: 409 });

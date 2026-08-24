@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
           const assessmentVersion = result.task_assessment && typeof result.task_assessment === "object" && "version" in result.task_assessment
             ? String(result.task_assessment.version)
             : null;
-          const recoveryAssessment = assessmentVersion === "reasoning-trace-gap-v1" || assessmentVersion === "reasoning-recovery-v3-three-arm" ? result.task_assessment as RecoveryAssessment : null;
+          const recoveryAssessment = assessmentVersion === "reasoning-trace-gap-v1" || assessmentVersion === "reasoning-recovery-v3-three-arm" || assessmentVersion === "reasoning-recovery-v4-matched-preinterruption" ? result.task_assessment as RecoveryAssessment : null;
           return {
             blind_id: blindIdFor(result.session_id),
             locale: result.locale,
@@ -83,7 +83,7 @@ export async function GET(request: NextRequest) {
           };
         })
         .sort((left, right) => left.blind_id.localeCompare(right.blind_id));
-      return NextResponse.json({ mode: resultStorageMode(), rubricVersion: "reasoning-recovery-v3-t1-t2", results: eligible });
+      return NextResponse.json({ mode: resultStorageMode(), rubricVersion: "reasoning-recovery-v4-t1-t2", results: eligible });
     }
     const exportMode = request.nextUrl.searchParams.get("export");
     if (exportMode === "1" || exportMode === "analysis") {
@@ -92,7 +92,7 @@ export async function GET(request: NextRequest) {
         : database.results;
       const sessionIds = new Set(results.map((result) => result.session_id));
       return NextResponse.json({
-        schemaVersion: "rmw-research-results-v12-three-arm",
+        schemaVersion: "rmw-research-results-v13-matched-preinterruption",
         storageMode: resultStorageMode(),
         exportedAt: new Date().toISOString(),
         exportMode: exportMode === "analysis" ? "analysis-ready" : "all-raw",
@@ -129,8 +129,8 @@ export async function GET(request: NextRequest) {
         const assessmentVersion = result.task_assessment && typeof result.task_assessment === "object" && "version" in result.task_assessment
           ? String(result.task_assessment.version)
           : null;
-        const recoveryAssessment = assessmentVersion === "reasoning-trace-gap-v1" || assessmentVersion === "reasoning-recovery-v3-three-arm" ? result.task_assessment as RecoveryAssessment : null;
-        const expectedProbeStages = assessmentVersion === "reasoning-recovery-v3-three-arm" ? ["t1", "t2", "t3"] as const : ["t1", "t2"] as const;
+        const recoveryAssessment = assessmentVersion === "reasoning-trace-gap-v1" || assessmentVersion === "reasoning-recovery-v3-three-arm" || assessmentVersion === "reasoning-recovery-v4-matched-preinterruption" ? result.task_assessment as RecoveryAssessment : null;
+        const expectedProbeStages = assessmentVersion === "reasoning-recovery-v3-three-arm" || assessmentVersion === "reasoning-recovery-v4-matched-preinterruption" ? ["t1", "t2", "t3"] as const : ["t1", "t2"] as const;
         const probeCount = recoveryAssessment ? expectedProbeStages.filter((stage) => Boolean(recoveryAssessment.probes[stage])).length : 0;
         const phaseOneMaterialCompletionIds = new Set(sessionEvents.filter((event) => event.event_type === "material_exposure_completed" && event.stage === "research_work").map((event) => event.target_id).filter(Boolean));
         const recoveryTabs = [...new Set(sessionEvents.filter((event) => event.event_type === "recovery_tab_viewed").map((event) => event.target_id).filter((value): value is string => Boolean(value)))];

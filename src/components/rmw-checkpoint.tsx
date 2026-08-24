@@ -34,16 +34,16 @@ type ExtractedCard = Omit<ProblemStateCard, "content" | "detail" | "source" | "w
 const labels = {
   "zh-CN": {
     title: "保存窗口",
-    subtitle: "系统会在后台结合你实际写下的 memo、人机对话与研究操作轨迹冻结并分析当前推理状态，用于后续研究分析。此过程不会向你展示任何提取结果，也不需要你做任何操作。",
+    subtitle: "系统正在后台保存你刚才的工作记录，包括 memo、对话、材料浏览和操作记录。此过程不会展示任何处理结果，也不需要你做任何操作。",
     task: "主任务",
     save: "保存窗口",
     break: "中断任务",
     resume: "恢复",
     saveAndBreak: "保存并进入中断任务",
     waiting: "准备阶段将在 3 分钟后结束",
-    early: "请完成 3 分钟的条件内准备，倒计时结束后才可进入中断任务。",
+    early: "请等待保存窗口结束，倒计时结束后才可进入中断任务。",
     guideTitle: "保存窗口说明",
-    guideDescription: "只有 DeepSeek 成功分析参与者内容与研究轨迹后，才会显示 Problem State；校准后的结果会用于中断后的恢复支持。",
+    guideDescription: "系统会在后台保存第一阶段的工作记录，不在本页展示处理结果。",
     interruption: "中断任务",
     letterGame: "字母 2-back 游戏",
     letterHint: "判断当前字母是否与前两个字母相同。",
@@ -59,16 +59,16 @@ const labels = {
   },
   en: {
     title: "Save window",
-    subtitle: "The system freezes and analyzes your memo, human-AI conversation, and research-action trace in the background for later research analysis. Nothing is shown to you here, and no action is required.",
+    subtitle: "The system is saving your recent work in the background, including the memo, conversation, material views, and interaction log. No processing result is shown here, and no action is required.",
     task: "Primary task",
     save: "Save window",
     break: "Interruption",
     resume: "Resume",
     saveAndBreak: "Save and begin interruption",
     waiting: "Preparation ends after three minutes",
-    early: "Please use the full three-minute condition-specific preparation period before the interruption.",
+    early: "Please wait until the save window ends before beginning the interruption.",
     guideTitle: "Save-window guide",
-    guideDescription: "Problem state appears only after DeepSeek analyzes participant-authored content and research actions. The calibrated result is used for post-interruption recovery.",
+    guideDescription: "The system saves the Phase 1 work record in the background and does not show any processing result on this page.",
     interruption: "Interruption",
     letterGame: "Letter 2-back game",
     letterHint: "Decide whether the current letter matches the letter two positions back.",
@@ -129,14 +129,14 @@ function formatClock(totalSeconds: number) {
 
 function CheckpointGuide({ locale, open, onOpenChange }: { locale: Locale; open: boolean; onOpenChange: (open: boolean) => void }) {
   const steps = useMemo(() => locale === "zh-CN" ? [
-    { target: "checkpoint-timeline", title: "保存阶段时间轴", body: "这里展示实验流程。您当前处于第 2 阶段「保存窗口 (Save Window)」，系统正在后台冻结并分析第一阶段的记录，不会向您展示分析结果。" },
-    { target: "checkpoint-saved", title: "推理状态已保存", body: "系统已完成后台记录，无需您做任何操作，等待窗口结束后即可进入中断任务。" },
-    { target: "checkpoint-empty", title: "Problem State 提取说明", body: "当未能成功归纳或处于测试状态时，此区域会显示状态提示。在实际实验中，需在工作区写入有效的思考记录以触发提取。" },
+    { target: "checkpoint-timeline", title: "保存阶段时间轴", body: "这里展示实验流程。您当前处于第 2 阶段「保存窗口 (Save Window)」，系统正在后台保存第一阶段的工作记录。" },
+    { target: "checkpoint-saved", title: "工作记录已保存", body: "系统已完成后台保存，无需您做任何操作，等待窗口结束后即可进入中断任务。" },
+    { target: "checkpoint-empty", title: "保存状态", body: "如果记录尚未保存完成，此区域会显示当前状态；请按页面提示等待或返回继续工作。" },
     { target: "checkpoint-footer", title: "保存与进度控制", body: "此处展示当前保存窗口的等待倒计时或完成状态。在测试模式或倒计时结束后，可点击右侧按钮进入下一阶段。" },
   ] : [
-    { target: "checkpoint-timeline", title: "Save Window Stage", body: "Indicates you are in Stage 2 (Save Window). The system freezes and analyzes your Phase 1 record in the background; nothing is shown to you." },
-    { target: "checkpoint-saved", title: "Reasoning state saved", body: "The background record is complete. No action is required; the interruption begins once the wait period ends." },
-    { target: "checkpoint-empty", title: "Problem State Status", body: "Shows extraction status and notices when cards are not yet generated or when testing without API keys." },
+    { target: "checkpoint-timeline", title: "Save Window Stage", body: "Indicates you are in Stage 2 (Save Window). The system saves the Phase 1 work record in the background." },
+    { target: "checkpoint-saved", title: "Work record saved", body: "The background save is complete. No action is required; the interruption begins once the wait period ends." },
+    { target: "checkpoint-empty", title: "Save status", body: "If the record is not yet saved, this area shows its current status; wait or return to the workspace as instructed." },
     { target: "checkpoint-footer", title: "Save & Progress Control", body: "Displays countdown timer or completion status. In test mode or when finished, proceed to the next stage using the right button." },
   ], [locale]);
 
@@ -170,21 +170,14 @@ export function RmwCheckpoint({
   onContinue: (snapshot?: ProblemStateSnapshot) => void;
 }) {
   const t = labels[locale];
-  const requiresExtraction = condition !== "rmw_no_summary";
   const [cards, setCards] = useState<ProblemStateCard[]>([]);
   const [relations, setRelations] = useState<ProblemStateRelation[]>([]);
-  const [mode, setMode] = useState<"loading" | "live" | "insufficient" | "unavailable" | "error">(
-    requiresExtraction ? "loading" : "live",
-  );
+  const [mode, setMode] = useState<"loading" | "live" | "insufficient" | "unavailable" | "error">("loading");
   const [guideOpen, setGuideOpen] = useState(true);
   const [earlyNotice, setEarlyNotice] = useState(false);
   const remaining = useCheckpointCountdown(testMode);
 
   useEffect(() => {
-    if (!requiresExtraction) {
-      eventLog("checkpoint_extraction_not_required", { taskId, condition }, { stage: "checkpoint" });
-      return;
-    }
     const controller = new AbortController();
     const extract = async () => {
       try {
@@ -233,28 +226,28 @@ export function RmwCheckpoint({
     };
     void extract();
     return () => controller.abort();
-  }, [condition, locale, memo, messages, requiresExtraction, taskId]);
+  }, [locale, memo, messages, taskId]);
 
-  const extractionReady = !requiresExtraction || mode === "live";
+  const extractionReady = mode === "live";
   const preparationReady = extractionReady;
-  const modeLabel = !requiresExtraction ? (locale === "zh-CN" ? "用户 memo" : "Participant memo") : mode === "live" ? "DeepSeek" : mode === "loading"
-    ? (locale === "zh-CN" ? "分析中" : "Analyzing")
+  const modeLabel = mode === "live" ? (locale === "zh-CN" ? "已保存" : "Saved") : mode === "loading"
+    ? (locale === "zh-CN" ? "保存中" : "Saving")
     : mode === "insufficient"
       ? (locale === "zh-CN" ? "未生成" : "Not generated")
       : mode === "unavailable"
-        ? (locale === "zh-CN" ? "DeepSeek 未配置" : "DeepSeek unavailable")
-        : (locale === "zh-CN" ? "分析失败" : "Analysis failed");
+        ? (locale === "zh-CN" ? "暂不可用" : "Unavailable")
+        : (locale === "zh-CN" ? "保存失败" : "Save failed");
   const emptyMessage = mode === "loading"
-    ? (locale === "zh-CN" ? "正在检查 memo 与对话，并请求 DeepSeek 提取……" : "Checking the memo and chat, then requesting DeepSeek extraction…")
+    ? (locale === "zh-CN" ? "正在保存 memo、对话、材料浏览和操作记录……" : "Saving the memo, conversation, material views, and interaction log…")
     : mode === "insufficient"
-      ? (locale === "zh-CN" ? "没有检测到参与者实际写入的 memo 或对话，因此未生成 Problem State。预填的问题和模板不算作参与者推理。" : "No participant-authored memo or chat was detected, so no problem state was generated. The prefilled question and template do not count as participant reasoning.")
+      ? (locale === "zh-CN" ? "没有检测到实际写入的 memo 或对话内容。预填的问题和模板不算作已完成的工作记录。" : "No participant-authored memo or conversation was detected. The prefilled question and template do not count as completed work.")
       : mode === "unavailable"
-        ? (locale === "zh-CN" ? "服务器未配置 DeepSeek API Key，因此本次没有生成 Problem State，也不会显示演示卡片。" : "The server has no DeepSeek API key, so no problem state was generated and no demo cards are shown.")
-        : (locale === "zh-CN" ? "DeepSeek 提取失败，本次没有生成 Problem State。" : "DeepSeek extraction failed, so no problem state was generated.");
+        ? (locale === "zh-CN" ? "服务器暂时无法完成后台保存，请稍后重试。" : "The server cannot complete the background save right now. Please try again later.")
+        : (locale === "zh-CN" ? "后台保存失败，请返回工作区后重试。" : "The background save failed. Return to the workspace and try again.");
   const footerStatus = mode === "loading"
-    ? (locale === "zh-CN" ? "正在等待提取结果" : "Waiting for extraction")
+    ? (locale === "zh-CN" ? "正在等待保存完成" : "Waiting for the save to finish")
     : !extractionReady
-      ? (testMode ? (locale === "zh-CN" ? "测试模式可跳过；正式实验不可继续" : "Test mode may skip; the formal study cannot continue") : (locale === "zh-CN" ? "未生成 Problem State，无法进入中断任务" : "No problem state was generated; interruption is blocked"))
+      ? (testMode ? (locale === "zh-CN" ? "测试模式可跳过；正式实验不可继续" : "Test mode may skip; the formal study cannot continue") : (locale === "zh-CN" ? "工作记录尚未保存，无法进入中断任务" : "The work record has not been saved; interruption is blocked"))
       : testMode
         ? (locale === "zh-CN" ? "测试模式：可直接继续" : "Test mode: continue anytime")
         : remaining > 0 ? t.waiting : (locale === "zh-CN" ? "可以进入中断任务" : "Interruption task is ready");
@@ -268,11 +261,7 @@ export function RmwCheckpoint({
       <header className="flex items-end justify-between py-6">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">{t.title}</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{requiresExtraction
-            ? t.subtitle
-            : locale === "zh-CN"
-              ? "系统正在后台冻结你中断前自行撰写的 memo。本方式不调用 AI 提取，也不会生成 AI 摘要、卡片或知识网络。"
-              : "The system is freezing your pre-interruption memo. This method does not call AI extraction or generate an AI summary, cards, or knowledge network."}</p>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{t.subtitle}</p>
         </div>
         <div className="flex items-center gap-3">
           <Badge variant={mode === "live" ? "default" : "secondary"}>{modeLabel}</Badge>
@@ -287,11 +276,11 @@ export function RmwCheckpoint({
         <div className="mx-auto grid size-14 place-items-center rounded-2xl bg-emerald-50 text-emerald-700">
           <Check size={28} />
         </div>
-        <h2 className="mt-5 text-lg font-semibold">{locale === "zh-CN" ? "推理状态已保存" : "Reasoning state saved"}</h2>
-        <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">{locale === "zh-CN" ? "系统已在后台冻结并记录你当前的推理状态，用于后续研究分析；此过程不会向你展示任何摘要或卡片。" : "The system froze and recorded your current reasoning state in the background for later analysis. No summary or cards are shown here."}</p>
+        <h2 className="mt-5 text-lg font-semibold">{locale === "zh-CN" ? "工作记录已保存" : "Work record saved"}</h2>
+        <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">{locale === "zh-CN" ? "系统已在后台保存你刚才的工作记录。此页面不会展示任何处理结果。" : "The system saved your recent work in the background. No processing result is shown on this page."}</p>
       </section> : <section data-tour="checkpoint-empty" className="rounded-2xl border bg-white px-8 py-16 text-center shadow-[0_12px_40px_rgba(35,43,70,.05)]">
         <div className="mx-auto grid size-12 place-items-center rounded-xl bg-secondary text-primary">{mode === "loading" ? <Brain size={25} /> : <WarningCircle size={25} />}</div>
-        <h2 className="mt-5 text-lg font-semibold">{locale === "zh-CN" ? "没有可显示的 Problem State" : "No problem state to display"}</h2>
+        <h2 className="mt-5 text-lg font-semibold">{locale === "zh-CN" ? "工作记录尚未保存" : "Work record not yet saved"}</h2>
         <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">{emptyMessage}</p>
         {mode !== "loading" && <Button variant="outline" className="mt-6" onClick={onBack}>{locale === "zh-CN" ? "返回工作区继续研究" : "Return to the workspace"}</Button>}
       </section>}
@@ -300,7 +289,7 @@ export function RmwCheckpoint({
         <div className="flex items-center gap-3 text-sm"><Clock size={20} className="text-primary" /><div><p className="font-medium">{footerStatus}</p>{!testMode&&extractionReady&&remaining>0&&<div className="mt-2 flex items-center gap-3"><Progress value={((CHECKPOINT_DURATION_SECONDS-remaining)/CHECKPOINT_DURATION_SECONDS)*100} className="h-1.5 w-32" /><span className="text-xs text-muted-foreground">{formatClock(remaining)}</span></div>}</div></div>
         <div className="text-right">
           {!testMode&&earlyNotice && remaining > 0 && <p role="status" className="mb-2 text-xs text-amber-700">{t.early}</p>}
-          <Button variant={preparationReady&&(testMode||remaining === 0) ? "default" : "secondary"} disabled={(requiresExtraction && mode === "loading") || (!testMode&&!preparationReady)} className="h-11 px-6" onClick={() => {
+          <Button variant={preparationReady&&(testMode||remaining === 0) ? "default" : "secondary"} disabled={mode === "loading" || (!testMode&&!preparationReady)} className="h-11 px-6" onClick={() => {
             if (!preparationReady) {
               if (testMode) {
                 eventLog("checkpoint_skipped_in_test_mode", { taskId, reason: mode }, { stage: "checkpoint" });
@@ -313,8 +302,8 @@ export function RmwCheckpoint({
               eventLog("checkpoint_continue_blocked", { remaining }, { stage: "checkpoint" });
               return;
             }
-            eventLog("checkpoint_completed", { taskId, condition, cards: requiresExtraction ? cards : [], relations: requiresExtraction ? relations : [], preparationSeconds: CHECKPOINT_DURATION_SECONDS }, { stage: "checkpoint" });
-            onContinue(requiresExtraction ? { cards, relations, capturedAt: new Date().toISOString() } : undefined);
+            eventLog("checkpoint_completed", { taskId, condition, cards, relations, preparationSeconds: CHECKPOINT_DURATION_SECONDS }, { stage: "checkpoint" });
+            onContinue({ cards, relations, capturedAt: new Date().toISOString() });
           }}>{!preparationReady&&testMode?(locale === "zh-CN"?"仅测试模式：跳过保存":"Test mode only: skip save"):t.saveAndBreak}<ArrowRight /></Button>
         </div>
       </div>
