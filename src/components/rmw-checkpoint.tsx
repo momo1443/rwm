@@ -170,14 +170,21 @@ export function RmwCheckpoint({
   onContinue: (snapshot?: ProblemStateSnapshot) => void;
 }) {
   const t = labels[locale];
+  const requiresExtraction = condition !== "rmw_no_summary";
   const [cards, setCards] = useState<ProblemStateCard[]>([]);
   const [relations, setRelations] = useState<ProblemStateRelation[]>([]);
-  const [mode, setMode] = useState<"loading" | "live" | "insufficient" | "unavailable" | "error">("loading");
+  const [mode, setMode] = useState<"loading" | "live" | "insufficient" | "unavailable" | "error">(
+    requiresExtraction ? "loading" : "live",
+  );
   const [guideOpen, setGuideOpen] = useState(true);
   const [earlyNotice, setEarlyNotice] = useState(false);
   const remaining = useCheckpointCountdown(testMode);
 
   useEffect(() => {
+    if (!requiresExtraction) {
+      eventLog("checkpoint_extraction_not_required", { taskId, condition }, { stage: "checkpoint" });
+      return;
+    }
     const controller = new AbortController();
     const extract = async () => {
       try {
@@ -226,9 +233,8 @@ export function RmwCheckpoint({
     };
     void extract();
     return () => controller.abort();
-  }, [locale, memo, messages, taskId]);
+  }, [condition, locale, memo, messages, requiresExtraction, taskId]);
 
-  const requiresExtraction = condition !== "rmw_no_summary";
   const extractionReady = !requiresExtraction || mode === "live";
   const preparationReady = extractionReady;
   const modeLabel = !requiresExtraction ? (locale === "zh-CN" ? "用户 memo" : "Participant memo") : mode === "live" ? "DeepSeek" : mode === "loading"
@@ -262,7 +268,11 @@ export function RmwCheckpoint({
       <header className="flex items-end justify-between py-6">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">{t.title}</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{t.subtitle}</p>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{requiresExtraction
+            ? t.subtitle
+            : locale === "zh-CN"
+              ? "系统正在后台冻结你中断前自行撰写的 memo。本方式不调用 AI 提取，也不会生成 AI 摘要、卡片或知识网络。"
+              : "The system is freezing your pre-interruption memo. This method does not call AI extraction or generate an AI summary, cards, or knowledge network."}</p>
         </div>
         <div className="flex items-center gap-3">
           <Badge variant={mode === "live" ? "default" : "secondary"}>{modeLabel}</Badge>

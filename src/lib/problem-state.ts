@@ -56,7 +56,8 @@ export function toCardRelations(snapshot: ProblemStateSnapshot): CardRelation[] 
 
 export function problemStateToContinuousSummary(cards: ProblemStateCard[], locale: Locale) {
   return cards
-    .map((card) => `${card.content[locale]}。${card.detail[locale]}`)
+    .map((card) => card.detail[locale].trim() || card.content[locale].trim())
+    .filter(Boolean)
     .join("\n\n");
 }
 

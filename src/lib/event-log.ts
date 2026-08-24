@@ -26,6 +26,7 @@ const STORAGE_KEY = "rmw-demo-events";
 const PARTICIPANT_KEY = "rmw-participant-id";
 const SESSION_KEY = "rmw-study-session-id";
 const TOKEN_SESSION_KEY = "rmw-participant-token-session-id";
+const TOKEN_KEY = "rmw-participant-session-token";
 
 export function getOrCreateParticipantId() {
   if (typeof window === "undefined") return "";
@@ -44,6 +45,15 @@ export function beginStudySession() {
   const sessionId = crypto.randomUUID();
   sessionStorage.setItem(SESSION_KEY, sessionId);
   return sessionId;
+}
+
+export function resetStudySessionForNewRun() {
+  if (typeof window === "undefined") return;
+  sessionStorage.removeItem(SESSION_KEY);
+  sessionStorage.removeItem(TOKEN_SESSION_KEY);
+  sessionStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem("rmw-timer-checkpoint");
+  sessionStorage.removeItem("rmw-problem-state");
 }
 
 export function getActiveSessionId() {

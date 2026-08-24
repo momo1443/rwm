@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
-import { beginStudySession, eventLog, getOrCreateParticipantId, readStudyEvents } from "@/lib/event-log";
+import { beginStudySession, eventLog, getOrCreateParticipantId, readStudyEvents, resetStudySessionForNewRun } from "@/lib/event-log";
 import {
   completeRemoteStudy,
   resumePendingCompletedStudy,
@@ -335,7 +335,7 @@ function TaskBrief({locale,taskId,setScreen}:{locale:Locale;taskId:ResearchTaskI
       </section>)}</div>
     </div>
     <div className="mt-8 grid grid-cols-[auto_1fr] gap-3">
-      <Button variant="outline" onClick={()=>setScreen("landing")}>{locale==="zh-CN"?"返回":"Back"}</Button>
+      <Button variant="outline" onClick={()=>{resetStudySessionForNewRun();setScreen("landing")}}>{locale==="zh-CN"?"返回":"Back"}</Button>
       <TimedButton seconds={8} locale={locale} label={locale==="zh-CN"?"确认并继续":"Confirm and continue"} className="h-11" onClick={()=>{eventLog("task_brief_confirmed",{taskId},{stage:"task_setup"});setScreen("survey")}} />
     </div>
   </CenteredShell>;
@@ -767,11 +767,11 @@ function Workspace({
       >
         <span className="h-12 w-1 rounded-full bg-border transition group-hover:bg-primary/45"/>
       </button>
-      <section ref={rightColumnRef} className="grid min-h-0 min-w-0 overflow-hidden bg-white" style={{gridTemplateRows:`${rightTopRatio}fr 10px ${100-rightTopRatio}fr`}}>
+      <section ref={rightColumnRef} className="grid min-h-0 min-w-0 overflow-hidden bg-white" style={{gridTemplateRows:chatDisabled?"1fr 58px":`${rightTopRatio}fr 10px ${100-rightTopRatio}fr`}}>
         {phase==="work"
           ?<PhaseOnePanel locale={locale} condition={condition} taskId={taskId} memo={memo} remaining={remainingSeconds} testMode={testMode} onPhaseOneCapture={onPhaseOneCapture} setScreen={setScreen}/>
           :<ContinuationPanel locale={locale} taskId={taskId} remaining={remainingSeconds} testMode={testMode} setScreen={setScreen} t={t}/>}
-        <button
+        {chatDisabled?<div data-tour="chat" className="flex items-center gap-3 border-t bg-muted/35 px-5 text-xs leading-5 text-muted-foreground"><NotePencil size={18} className="shrink-0 text-primary"/>{locale==="zh-CN"?"自主笔记方式：本流程不提供 AI 对话。":"Self-notes method: AI chat is not provided in this flow."}</div>:<><button
           type="button"
           aria-label={locale==="zh-CN"?"上下拖动，调整目标与 AI 助手窗口高度":"Drag vertically to resize the goals and AI-assistant windows"}
           title={locale==="zh-CN"?"上下拖动调整窗口高度":"Drag to resize panels"}
@@ -787,7 +787,7 @@ function Workspace({
         >
           <span className="h-1 w-12 rounded-full bg-border transition group-hover:bg-primary/45"/>
         </button>
-        <ChatPanel locale={locale} chat={chat} message={message} setMessage={setMessage} send={send} isLoading={isLoading} error={chatError} disabled={chatDisabled} t={t}/>
+        <ChatPanel locale={locale} chat={chat} message={message} setMessage={setMessage} send={send} isLoading={isLoading} error={chatError} t={t}/></>}
       </section>
     </div>
     {showTour&&<WorkspaceTour locale={locale} onComplete={()=>setShowTour(false)}/>}
@@ -942,5 +942,5 @@ function RecoveryPostSurveyPage({ locale, onSubmit }: { locale: Locale; onSubmit
 function Complete({locale,status,retry,setScreen,t}:{locale:Locale;status:"saving"|"saved"|"error";retry:()=>void;setScreen:(s:Screen)=>void;t:typeof copy[Locale]}) {
   if(status==="saving") return <div className="grid min-h-screen place-items-center bg-[#f7f6f2] p-8"><div className="max-w-lg text-center"><div className="mx-auto grid size-16 animate-pulse place-items-center rounded-2xl bg-[var(--active-soft)] text-[var(--active)]"><Clock size={34}/></div><h1 className="mt-6 text-3xl font-semibold">{locale==="zh-CN"?"正在安全保存":"Saving securely"}</h1><p className="mt-3 text-muted-foreground">{locale==="zh-CN"?"请保持页面开启，正在确认结果已写入研究数据库。":"Keep this page open while we confirm that your results reached the research database."}</p></div></div>;
   if(status==="error") return <div className="grid min-h-screen place-items-center bg-[#f7f6f2] p-8"><div className="max-w-lg text-center"><div className="mx-auto grid size-16 place-items-center rounded-2xl bg-red-50 text-red-600"><WarningCircle size={36} weight="fill"/></div><h1 className="mt-6 text-3xl font-semibold">{locale==="zh-CN"?"保存尚未完成":"Save not confirmed"}</h1><p role="alert" className="mt-3 text-muted-foreground">{locale==="zh-CN"?"网络或服务器暂时无法确认保存。你的回答仍保留在本设备中，请重试且不要关闭页面。":"The network or server could not confirm the save. Your answers remain on this device; retry without closing the page."}</p><Button className="mt-8" onClick={retry}>{locale==="zh-CN"?"重试保存":"Retry save"}</Button></div></div>;
-  return <div className="grid min-h-screen place-items-center bg-[#f7f6f2] p-8"><div className="max-w-lg text-center"><div className="mx-auto grid size-16 place-items-center rounded-2xl bg-[var(--active-soft)] text-[var(--active)]"><CheckCircle size={36} weight="fill"/></div><h1 className="mt-6 text-3xl font-semibold">{t.completed}</h1><p className="mt-3 text-muted-foreground">{t.completeText}</p><Button variant="outline" className="mt-8" onClick={()=>setScreen("landing")}>{t.back}</Button></div></div>;
+  return <div className="grid min-h-screen place-items-center bg-[#f7f6f2] p-8"><div className="max-w-lg text-center"><div className="mx-auto grid size-16 place-items-center rounded-2xl bg-[var(--active-soft)] text-[var(--active)]"><CheckCircle size={36} weight="fill"/></div><h1 className="mt-6 text-3xl font-semibold">{t.completed}</h1><p className="mt-3 text-muted-foreground">{t.completeText}</p><Button variant="outline" className="mt-8" onClick={()=>{resetStudySessionForNewRun();setScreen("landing")}}>{t.back}</Button></div></div>;
 }

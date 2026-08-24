@@ -12,6 +12,14 @@ import type { Condition, Locale, ProblemStateSnapshot } from "@/lib/rmw-types";
 
 type SupportTab = "summary" | "cards" | "network";
 
+const relationLabels = {
+  supports: { "zh-CN": "支持", en: "supports" },
+  challenges: { "zh-CN": "质疑", en: "challenges" },
+  constrains: { "zh-CN": "约束", en: "constrains" },
+  rejects: { "zh-CN": "排除", en: "rejects" },
+  leads_to: { "zh-CN": "导向", en: "leads to" },
+} as const;
+
 export function RecoverySupportPage({
   locale,
   condition,
@@ -94,7 +102,7 @@ export function RecoverySupportPage({
           {activeTab === "network" && <div className="mx-auto max-w-4xl space-y-3">{relations.length ? relations.map((relation) => {
             const source = cards.find((card) => card.id === relation.sourceCardId);
             const target = cards.find((card) => card.id === relation.targetCardId);
-            return <article key={relation.id} className="grid items-center gap-3 rounded-xl border p-4 md:grid-cols-[1fr_auto_1fr]"><p className="text-sm font-medium leading-6">{source?.content[locale] || relation.sourceCardId}</p><Badge variant="secondary">{relation.relationType}</Badge><p className="text-sm font-medium leading-6">{target?.content[locale] || relation.targetCardId}</p></article>;
+            return <article key={relation.id} className="grid items-center gap-3 rounded-xl border p-4 md:grid-cols-[1fr_auto_1fr]"><p className="text-sm font-medium leading-6">{source?.content[locale] || relation.sourceCardId}</p><Badge variant="secondary">{relationLabels[relation.relationType][locale]}</Badge><p className="text-sm font-medium leading-6">{target?.content[locale] || relation.targetCardId}</p></article>;
           }) : <p className="rounded-xl border bg-muted/30 p-5 text-sm text-muted-foreground">{locale === "zh-CN" ? "当前 trace 中没有可可靠展示的关系。" : "No reliable relations are available in this trace."}</p>}</div>}
         </div>
       </section>}

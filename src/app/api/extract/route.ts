@@ -177,6 +177,7 @@ Rules:
 - All candidates require participant calibration. Set the main goal and next action priority to "pinned"; others default to "normal".
 - Build the knowledge network only from the extracted cards. Do not create extra nodes.
 - Add relations only when the participant trace supports them. Use confidence at most 40 for inferred relations.
+- Use leads_to from an earlier reasoning state or path toward a next_action; never point leads_to backward from a next_action to an earlier hypothesis or constraint.
 - The network should show only relations supported by the participant trace; an empty relation list is valid.
 - Keep content concise: card content no more than 32 Chinese characters or 18 English words; detail no more than 70 Chinese characters or 45 English words.`;
 
