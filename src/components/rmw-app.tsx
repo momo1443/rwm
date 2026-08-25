@@ -855,7 +855,10 @@ function MemoPanel({locale,taskId,phase,memo,setMemo,t}:{locale:Locale;taskId:Re
     while(previousEnd>start&&nextEnd>start&&previous[previousEnd-1]===next[nextEnd-1]){previousEnd-=1;nextEnd-=1}
     const deletedText=previous.slice(start,previousEnd);
     const insertedText=next.slice(start,nextEnd);
-    const maxDeltaChars=12000;
+    // The API bounds an event payload at 20,000 JSON characters. Keeping both
+    // sides of a replacement to 4,000 characters leaves room for metadata and
+    // prevents one large paste from poisoning the event outbox.
+    const maxDeltaChars=4000;
     return {start,previousLength:previous.length,nextLength:next.length,deletedText:deletedText.slice(0,maxDeltaChars),insertedText:insertedText.slice(0,maxDeltaChars),truncated:deletedText.length>maxDeltaChars||insertedText.length>maxDeltaChars};
   };
   return <section data-tour="memo" className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-white">
