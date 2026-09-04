@@ -118,7 +118,7 @@ function queueFlush(sessionId: string, completed = false) {
   return flushQueue;
 }
 
-export async function startRemoteStudySession(input: { sessionId: string; participantCode: string; locale: string; condition: string; taskId: string; assignmentMode: "manual" | "manual_condition" }) {
+export async function startRemoteStudySession(input: { sessionId: string; participantCode: string; locale: string; condition: string; taskId: string; assignmentMode: "auto" | "manual" | "manual_condition" }) {
   const existingToken = typeof window === "undefined" || sessionStorage.getItem(TOKEN_SESSION_KEY) !== input.sessionId
     ? ""
     : sessionStorage.getItem(TOKEN_KEY) || "";

@@ -150,6 +150,13 @@ export async function findSession(sessionId: string) {
   return rows[0] || null;
 }
 
+export async function readParticipantResults(): Promise<ParticipantResultRow[]> {
+  const config = getResultStorageConfig();
+  if (!config) return [];
+  if (config.mode === "local") return (await readLocalDatabase(config.directory)).results;
+  return supabaseRequestAll<ParticipantResultRow>("participant_results?select=*&order=created_at.asc");
+}
+
 export async function createParticipant(input: { sessionId: string; participantCode: string; locale: string; condition: string; taskId: string }) {
   const config = getResultStorageConfig();
   if (!config) throw new Error("Result storage is not configured");
@@ -270,7 +277,7 @@ export async function readAllResults(): Promise<ResultDatabase> {
   if (!config) return structuredClone(EMPTY_DATABASE);
   if (config.mode === "local") return readLocalDatabase(config.directory);
   const [results, events] = await Promise.all([
-    supabaseRequestAll<ParticipantResultRow>("participant_results?select=*&order=created_at.asc"),
+    readParticipantResults(),
     supabaseRequestAll<ResultEventRow>("participant_result_events?select=*&order=server_timestamp.asc"),
   ]);
   return { results, events };

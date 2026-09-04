@@ -24,7 +24,7 @@ Open `http://localhost:3000`. Useful review routes:
 - `/admin` — password-protected researcher results console
 - `/admin/blind-review` — identity-blinded memo and T1/T2 coding
 
-The participant flow exposes no task chooser. Each participant directly selects Method 1 (`rmw`), Method 2 (`rmw_no_summary`), or Method 3 (`summary_only`) before consent; the server preserves that choice and does not randomize it. Add `?test=1&condition=...` to preselect a method during researcher review; test runs are excluded automatically.
+The participant flow exposes no task or recovery-method chooser. Formal sessions are assigned server-side, with a random tie-break among the currently least-filled recovery conditions: full RMW (`rmw`), participant memo (`rmw_no_summary`), or AI summary only (`summary_only`). Add `?test=1&condition=...` to choose a method during researcher review; test runs are excluded automatically.
 
 ## DeepSeek
 

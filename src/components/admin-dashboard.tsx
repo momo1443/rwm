@@ -197,7 +197,7 @@ function CohortOverview({ results }: { results: ResultSummary[] }) {
 }
 
 function ConditionDesignLegend() {
-  return <section className="mb-6 rounded-xl border bg-white p-5"><h2 className="font-semibold">三条件恢复协议</h2><p className="mt-1 text-xs text-muted-foreground">v4 协议中，三组在 T2 前共享完全相同的 Materials、AI Chat、自由 memo、15 分钟工作期、冻结记录、T1、中断任务与无辅助 T2。仅恢复支持不同；恢复后完成 T3，再进入 D6 延续任务和任务后问卷。</p><div className="mt-4 grid gap-3 lg:grid-cols-3">{activeConditionDefinitions.map(item=><article key={item.id} className="rounded-lg border p-4"><Badge>{item.label}</Badge><p className="mt-3 text-xs leading-5 text-muted-foreground">{item.description}</p><p className="mt-2 font-mono text-[9px] text-muted-foreground">{item.id}</p></article>)}</div></section>;
+  return <section className="mb-6 rounded-xl border bg-white p-5"><h2 className="font-semibold">三条件恢复协议</h2><p className="mt-1 text-xs text-muted-foreground">正式参与者由服务器在当前样本量最少的恢复条件中随机分配。v4 协议中，三组在 T2 前共享完全相同的 Materials、AI Chat、自由 memo、15 分钟工作期、冻结记录、T1、中断任务与无辅助 T2。仅恢复支持不同；恢复后完成 T3，再进入 D6 延续任务和任务后问卷。</p><div className="mt-4 grid gap-3 lg:grid-cols-3">{activeConditionDefinitions.map(item=><article key={item.id} className="rounded-lg border p-4"><Badge>{item.label}</Badge><p className="mt-3 text-xs leading-5 text-muted-foreground">{item.description}</p><p className="mt-2 font-mono text-[9px] text-muted-foreground">{item.id}</p></article>)}</div></section>;
 }
 
 function formatPercent(value: number | null) {
